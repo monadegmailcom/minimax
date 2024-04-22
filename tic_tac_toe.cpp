@@ -338,7 +338,8 @@ pair< double, optional< size_t > > negamax(
     generate_moves( node, moves );
     const size_t new_size = moves.size();
 
-    bool is_terminal = get_winner( node ) != not_set
+    const Player winner = get_winner( node );
+    bool is_terminal = winner != not_set
                        || new_size == orig_size;
 
     // apply heuristic to reorder moves
@@ -346,9 +347,11 @@ pair< double, optional< size_t > > negamax(
         reorder( node, player, moves.begin() + orig_size, moves.begin() + new_size );
 
     optional< size_t > best_move;
-    double value = 0.0;
+    double value;
 
-    if (!depth || is_terminal)
+    if (is_terminal && winner != not_set)
+        value = player * winner * player1_won;
+    else if (is_terminal || !depth)
         value = player * eval( node );
     else
     {
@@ -399,29 +402,99 @@ struct TreeNode
     double value_;
     optional< size_t > move_;
     optional< size_t > best_move_;
-    vector< unique_ptr< TreeNode > > children_;
+    vector< shared_ptr< TreeNode > > children_;
 };
 
 struct BuildTree
 {
-    BuildTree( TreeNode& node ) : current_node_( node ) {}
+    BuildTree( Player player )
+        : root_( make_shared< TreeNode> ( player ) ) {}
+    BuildTree( shared_ptr< TreeNode > tree_node )
+        : root_( tree_node ) {}
     BuildTree operator()( size_t move )
     {
-        current_node_.children_.push_back( make_unique< TreeNode >(
-            Player (-current_node_.player_ )));
+        shared_ptr< TreeNode > new_node( make_shared< TreeNode >(
+            Player (-root_->player_ )));
+        root_->children_.push_back( new_node );
 
-        TreeNode& new_node = *current_node_.children_.back();
-        new_node.move_ = move;
+        new_node->move_ = move;
         return BuildTree( new_node );
     }
 
     void update( double value, optional< size_t > best_move )
     {
-        current_node_.value_ = value;
-        current_node_.best_move_ = best_move;
+        root_->value_ = value;
+        root_->best_move_ = best_move;
     }
 
-    TreeNode& current_node_;
+    void print_tree_rec(
+        ostream& stream, Node& node, TreeNode const& treeNode,
+        string name, bool is_best_move )
+    {
+        // plot vertex
+        stream << name << " [label=<";
+        const size_t n = node.n;
+        for (size_t i = 0; i != n; ++i)
+        {
+            for (size_t j = 0; j != n; ++j)
+            {
+                const size_t idx = i * n + j;
+                Player entry = node.board[idx];
+                if (idx == treeNode.move_)
+                    stream << "<B>";
+                stream << entry;
+                if (idx == treeNode.move_)
+                    stream << "</B>";
+            }
+            stream << "<BR/>";
+        }
+        stream << ">";
+        if (is_best_move)
+            stream << " color=\"red\"";
+
+        if (treeNode.player_ == player1)
+            stream << " shape=box";
+        stream << "]\n";
+
+        for (vector< shared_ptr< TreeNode > >::const_iterator
+             itr = treeNode.children_.begin();
+             itr != treeNode.children_.end(); ++itr)
+        {
+            assert ((**itr).move_);
+            const size_t move = *(**itr).move_;
+
+            const string new_name = name + "_" + to_string( move );
+            bool is_new_best_move =
+                is_best_move && move == treeNode.best_move_;
+
+            // plot edge to child
+            stream << name << " -- " << new_name
+                << " [label=\"" << (**itr).value_ << "\"";
+            if (is_new_best_move)
+                stream << " color=\"red\"";
+            stream << "]\n";
+
+            // apply move
+            node.board[move] = treeNode.player_;
+
+            print_tree_rec(
+                stream, node, **itr, new_name, is_new_best_move );
+
+            // undo move
+            node.board[move] = not_set;
+        }
+    }
+
+    // does not change node
+    void print( ostream& stream, Node& node  )
+    {
+        stream << "graph T {\n"
+                << "node [fontname=\"Courier New\"]\n";
+        print_tree_rec( stream, node, *root_, "v", true );
+        stream << "}\n\n";
+    }
+
+    shared_ptr< TreeNode > root_;
 };
 
 struct NoBuildTree
@@ -429,72 +502,6 @@ struct NoBuildTree
     NoBuildTree operator()( size_t move ) { return NoBuildTree();}
     void update( double value, optional< size_t > best_move ) {}
 };
-
-void print_tree_rec(
-    ostream& stream, Node& node, TreeNode const& treeNode,
-    string name, bool is_best_move )
-{
-    // plot vertex
-    stream << name << " [label=<";
-    const size_t n = node.n;
-    for (size_t i = 0; i != n; ++i)
-    {
-        for (size_t j = 0; j != n; ++j)
-        {
-            const size_t idx = i * n + j;
-            Player entry = node.board[idx];
-            if (idx == treeNode.move_)
-                stream << "<B>";
-            stream << entry;
-            if (idx == treeNode.move_)
-                stream << "</B>";
-        }
-        stream << "<BR/>";
-    }
-    stream << ">";
-    if (is_best_move)
-        stream << " color=\"red\"";
-
-    if (treeNode.player_ == player1)
-        stream << " shape=box";
-    stream << "]\n";
-
-    for (vector< unique_ptr< TreeNode > >::const_iterator itr = treeNode.children_.begin();
-         itr != treeNode.children_.end(); ++itr)
-    {
-        assert ((**itr).move_);
-        const size_t move = *(**itr).move_;
-
-        const string new_name = name + "_" + to_string( move );
-        bool is_new_best_move = is_best_move && move == treeNode.best_move_;
-
-        // plot edge to child
-        stream << name << " -- " << new_name
-               << " [label=\"" << (**itr).value_ << "\"";
-        if (is_new_best_move)
-            stream << " color=\"red\"";
-        stream << "]\n";
-
-        // apply move
-        node.board[move] = treeNode.player_;
-
-        print_tree_rec(
-            stream, node, **itr, new_name, is_new_best_move );
-
-        // undo move
-        node.board[move] = not_set;
-    }
-}
-
-// does not change node
-void print_tree(
-    ostream& stream, Node& node, TreeNode const& treeNode )
-{
-    stream << "graph T {\n"
-            << "node [fontname=\"Courier New\"]\n";
-    print_tree_rec( stream, node, treeNode, "v", true );
-    stream << "}\n\n";
-}
 
 struct Algo
 {
@@ -504,7 +511,7 @@ struct Algo
 };
 
 void game( Algo algo1, Algo algo2, Player player, Node& node,
-           vector< size_t >& moves, ostream* stream )
+               vector< size_t >& moves, ostream* stream )
 {
     Algo& algo = algo1;
 
@@ -515,34 +522,32 @@ void game( Algo algo1, Algo algo2, Player player, Node& node,
 
     while (true)
     {
-        // root of decision tree
-        TreeNode root( player );
+        BuildTree build_tree( player );
 
         Statistic stat;
         pair< double, optional< size_t > > result;
 
-        // calc next move
         if (stream)
-        {
+            // calc next move
             result = negamax(
                 node, algo.depth, player2_won, player1_won, player, moves,
-                algo.eval, algo.reorder, BuildTree( root ), stat );
-
-            print_tree( *stream, node, root );
-        }
+                algo.eval, algo.reorder, build_tree, stat );
         else
             result = negamax(
                 node, algo.depth, player2_won, player1_won, player, moves,
                 algo.eval, algo.reorder, NoBuildTree(), stat );
 
-        cout << "Node count = " << stat.count_ << endl;
+        if (stream)
+            build_tree.print( *stream, node );
 
         // apply move
         if (result.second)
             node.board[*result.second] = player;
 
         // print candidates
-        for (auto itr = root.children_.begin(); itr != root.children_.end(); ++itr)
+        TreeNode root = *build_tree.root_;
+        for (auto itr = root.children_.begin();
+             itr != root.children_.end(); ++itr)
         {
             TreeNode const& child = **itr;
             assert (child.move_);
@@ -594,15 +599,15 @@ int main()
         [&shuffle](Node&, Player, vector< size_t >::iterator begin,
                     vector< size_t >::iterator end) { shuffle( begin, end ); };
 
-    Algo algo1 = { 3, reorder, &simple_estimate::eval };
-    Algo algo2 = { 6, reorder, &trivial_estimate::eval };
+    Algo algo1 = { 2, reorder, &simple_estimate::eval };
+    Algo algo2 = { 6, reorder, []( Node const& ) { return 0.0; } };
 
     Algo user = {
         0, &user_input,
         []( Node const& ) { return 0.0; },
     };
 
-    game( user, algo2, player1, node, moves, 0 );
+    game( user, algo2, player1, node, moves, &file );
 
     return 0;
 }
