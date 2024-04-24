@@ -1,25 +1,15 @@
+#include "minimax.h"
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <vector>
-#include <limits>
 #include <algorithm>
-#include <optional>
-#include <random>
 #include <memory>
-#include <functional>
 #include <cassert>
 
 using namespace std;
 using namespace placeholders;
-
-enum Player
-{
-    player1 = 1,
-    player2 = -1,
-    not_set = 0
-};
 
 ostream& operator<<( ostream& stream, Player player )
 {
@@ -32,96 +22,134 @@ ostream& operator<<( ostream& stream, Player player )
     return stream;
 }
 
-struct Node
+namespace tic_tac_toe {
+
+struct Rule : public GenericRule< size_t >
 {
-    vector< Player > board;
+    Rule( size_t n ) : n( n ), board( n * n, not_set ) {}
+
+    typedef size_t Move;
+    typedef vector< Player > State;
+
     size_t n;
-};
+    vector< Player > board;
 
-const double player1_won = numeric_limits< double >::infinity();
-const double player2_won = -numeric_limits< double >::infinity();
-
-void print_board( Node const& node )
-{
-    const size_t n = node.n;
-    for (size_t i = 0; i != n; ++i)
+    void print()
     {
+        for (size_t i = 0; i != n; ++i)
+        {
+            for (size_t j = 0; j != n; ++j)
+            {
+                Player entry = board[i * n + j];
+                cout << entry;
+            }
+            cout << '\n';
+        }
+    }
+
+    Player get_winner() const
+    {
+        // rows
+        for (size_t i = 0; i != n; ++i)
+        {
+            const Player player = board[i * n];
+            if (player == not_set)
+                continue;
+            size_t count = 0;
+            for (size_t j = 0; j != n; ++j)
+                if (board[i * n + j] != player)
+                    break;
+                else
+                    ++count;
+            if (count == n)
+                return player;
+        }
+        // cols
         for (size_t j = 0; j != n; ++j)
         {
-            Player entry = node.board[i*n + j];
-            cout << entry;
+            const Player player = board[j];
+            if (player == not_set)
+                continue;
+            size_t count = 0;
+            for (size_t i = 0; i != n; ++i)
+                if (board[i * n + j] != player)
+                    break;
+                else
+                    ++count;
+            if (count == n)
+                return player;
         }
-        cout << '\n';
-    }
-}
+        // diag1
+        Player player = board[0];
+        if (player != not_set)
+        {
+            size_t count = 0;
+            for (size_t k = 0; k != n; ++k)
+                if (board[k * n + k] != player)
+                    break;
+                else
+                    ++count;
+            if (count == n)
+                return player;
+        }
+        // diag2
+        player = board[n - 1];
+        if (player != not_set)
+        {
+            size_t count = 0;
+            for (size_t k = 0; k != n; ++k)
+                if (board[k * n + n - 1 - k] != player)
+                    break;
+                else
+                    ++count;
+            if (count == n)
+                return player;
+        }
 
-Player get_winner( Node const& node )
-{
-    // rows
-    for (size_t i = 0; i != node.n; ++i)
-    {
-        const Player player = node.board[i * node.n];
-        if (player == not_set)
-            continue;
-        size_t count = 0;
-        for (size_t j = 0; j != node.n; ++j)
-            if (node.board[i * node.n + j] != player)
-                break;
-            else
-                ++count;
-        if (count == node.n)
-            return player;
-    }
-    // cols
-    for (size_t j = 0; j != node.n; ++j)
-    {
-        const Player player = node.board[j];
-        if (player == not_set)
-            continue;
-        size_t count = 0;
-        for (size_t i = 0; i != node.n; ++i)
-            if (node.board[i * node.n + j] != player)
-                break;
-            else
-                ++count;
-        if (count == node.n)
-            return player;
-    }
-    // diag1
-    Player player = node.board[0];
-    if (player != not_set)
-    {
-        size_t count = 0;
-        for (size_t k = 0; k != node.n; ++k)
-            if (node.board[k * node.n + k] != player)
-                break;
-            else
-                ++count;
-        if (count == node.n)
-            return player;
-    }
-    // diag2
-    player = node.board[node.n - 1];
-    if (player != not_set)
-    {
-        size_t count = 0;
-        for (size_t k = 0; k != node.n; ++k)
-            if (node.board[k * node.n + node.n - 1 - k] != player)
-                break;
-            else
-                ++count;
-        if (count == node.n)
-            return player;
+        return not_set;
     }
 
-    return not_set;
-}
+    void generate_moves()
+    {
+        for (size_t i = 0; i != n; ++i)
+            for (size_t j = 0; j != n; ++j)
+            {
+                const size_t move = i * n + j;
+
+                if (board[move] == not_set)
+                    moves.push_back( move );
+            }
+    }
+
+    void apply_move(Move const& move, Player player)
+    {
+        board[move] = player;
+    }
+
+    void undo_move(Move const& move, Player)
+    {
+        board[move] = not_set;
+    }
+};
+
+namespace trivial_estimate {
+    double eval( Rule const& rule )
+    {
+        Player winner = rule.get_winner();
+        if (winner == player1)
+            return player1_won;
+        else if (winner == player2)
+            return player2_won;
+        else
+            return 0.0;
+    }
+} // namespace trivial_estimate {
 
 namespace simple_estimate {
-    double row_player_score( Node const& node, const size_t i )
+    double row_player_score( Rule const& rule, const size_t i )
     {
-        const size_t n = node.n;
-        Player const* a = node.board.data();
+        const size_t n = rule.n;
+        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
@@ -145,10 +173,10 @@ namespace simple_estimate {
             return 0.0;
     }
 
-    double col_player_score( Node const& node, const size_t j )
+    double col_player_score( Rule const& rule, const size_t j )
     {
-        const size_t n = node.n;
-        Player const* a = node.board.data();
+        const size_t n = rule.n;
+        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
@@ -172,10 +200,10 @@ namespace simple_estimate {
             return 0.0;
     }
 
-    double diag1_player_score( Node const& node )
+    double diag1_player_score( Rule const& rule )
     {
-        const size_t n = node.n;
-        Player const* a = node.board.data();
+        const size_t n = rule.n;
+        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
@@ -199,10 +227,10 @@ namespace simple_estimate {
             return 0.0;
     }
 
-    double diag2_player_score( Node const& node )
+    double diag2_player_score( Rule const& rule )
     {
-        const size_t n = node.n;
-        Player const* a = node.board.data();
+        const size_t n = rule.n;
+        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
@@ -227,173 +255,48 @@ namespace simple_estimate {
     }
 
     // undefined, if both players have wins
-    double eval( Node const& node )
+    double eval( Rule const& rule )
     {
-        const size_t n = node.n;
-        Player const* a = node.board.data();
+        const size_t n = rule.n;
+        Player const* a = rule.board.data();
 
         double value = 0.0;
         for (size_t k = 0; k != n; ++k)
-            value += row_player_score( node, k ) + col_player_score( node, k);
+            value += row_player_score( rule, k ) + col_player_score( rule, k);
 
-        value += diag1_player_score( node ) + diag2_player_score( node );
+        value += diag1_player_score( rule ) + diag2_player_score( rule );
 
         return value;
     }
 
 } // namespace simple_estimate {
 
-namespace trivial_estimate {
-    double eval( Node const& node )
-    {
-        Player winner = get_winner( node );
-        if (winner == player1)
-            return player1_won;
-        else if (winner == player2)
-            return player2_won;
-        else
-            return 0.0;
-    }
-} // namespace trivial_estimate {
-
-typedef function< double (Node const&) > EvalT;
-
-void generate_moves( Node const& node, vector< size_t >& moves )
-{
-    const size_t n = node.n;
-    Player const* a = node.board.data();
-
-    for (size_t i = 0; i != n; ++i)
-        for (size_t j = 0; j != n; ++j)
-        {
-            const size_t idx = i * n + j;
-            Player const& player = a[idx];
-
-            if (player == not_set)
-                moves.push_back( idx );
-        }
-}
-
-// reorder moves to be tried
-struct Shuffle
-{
-    Shuffle() : g_(rd_()) {}
-
-    void operator()(
-        vector< size_t >::iterator begin, vector< size_t >::iterator end )
-    {
-        shuffle( begin, end, g_ );
-    }
-
-    random_device rd_;
-    mt19937 g_;
-};
-
-void user_input( Node& node, Player player, vector< size_t >::iterator begin, vector< size_t >::iterator end )
+void user_input( Rule& rule,
+                 vector< size_t >::iterator begin,
+                 vector< size_t >::iterator end )
 {
     if (begin == end)
         return;
+
+    vector< Player >& board = rule.board;
+    rule.print();
+
     size_t row, col, idx;
     do
     {
-        cout << player << endl;
-        cout << "row (1-" << node.n << ")? ";
+        cout << "row (1-" << rule.n << ")? ";
         cin >> row;
-        cout << "col (1-" << node.n << ")? ";
+        cout << "col (1-" << rule.n << ")? ";
         cin >> col;
-        idx = (row - 1) * node.n + col - 1;
-    } while (row == 0 || col == 0 || row > node.n || col > node.n || node.board[idx] != not_set);
+        idx = (row - 1) * rule.n + col - 1;
+    } while (row == 0 || col == 0 || row > rule.n || col > rule.n || board[idx] != not_set);
 
     auto itr = find( begin, end, idx );
     assert (itr != end);
-    swap( *begin, *itr );
+    iter_swap( begin, itr );
 }
 
-typedef function< void (Node&, Player, vector< size_t >::iterator,
-                        vector< size_t >::iterator) > ReorderT;
-
-
-struct Statistic
-{
-    Statistic() : count_( 0 ) {}
-
-    void operator()()
-    {
-        ++count_;
-    }
-
-    size_t count_;
-};
-
-template< typename BuildTreeT, typename StatisticT >
-pair< double, optional< size_t > > negamax(
-    Node& node, size_t depth, double alpha, double beta,
-    Player player, vector< size_t >& moves, EvalT eval, ReorderT& reorder,
-    BuildTreeT builder, StatisticT& stat )
-{
-    stat();
-
-    // new moves are appended to move container
-    const size_t orig_size = moves.size();
-    generate_moves( node, moves );
-    const size_t new_size = moves.size();
-
-    const Player winner = get_winner( node );
-    bool is_terminal = winner != not_set
-                       || new_size == orig_size;
-
-    // apply heuristic to reorder moves
-    if (!is_terminal)
-        reorder( node, player, moves.begin() + orig_size, moves.begin() + new_size );
-
-    optional< size_t > best_move;
-    double value;
-
-    if (is_terminal && winner != not_set)
-        value = player * winner * player1_won;
-    else if (is_terminal || !depth)
-        value = player * eval( node );
-    else
-    {
-        value = player2_won;
-        for (size_t i = orig_size; i != new_size; ++i)
-        {
-            const size_t move = moves[i];
-
-            // apply move
-            node.board[move] = player;
-
-            const double new_value = -negamax(
-                node, depth - 1, -beta, -alpha, Player( -player ),
-                moves, eval, reorder, builder( move ), stat).first;
-
-            if (new_value > value)
-            {
-                value = new_value;
-                best_move = move;
-            }
-
-            // undo move
-            node.board[move] = not_set;
-
-            alpha = max( alpha, value );
-
-            if (alpha >= beta)
-                break;
-        }
-    }
-
-    // choose some move if no best move is set
-    if (!best_move && !is_terminal)
-        best_move = moves[orig_size];
-
-    builder.update( player * value, best_move );
-
-    // remove generated moves
-    moves.resize( orig_size );
-
-    return make_pair( value, best_move );
-}
+} // namespace tic_tac_toe {
 
 struct TreeNode
 {
@@ -407,10 +310,10 @@ struct TreeNode
 
 struct BuildTree
 {
-    BuildTree( Player player )
-        : root_( make_shared< TreeNode> ( player ) ) {}
-    BuildTree( shared_ptr< TreeNode > tree_node )
-        : root_( tree_node ) {}
+    BuildTree( Player player, tic_tac_toe::Rule& rule )
+        : root_( make_shared< TreeNode> ( player )), rule_( rule ) {}
+    BuildTree( shared_ptr< TreeNode > tree_node, tic_tac_toe::Rule& rule )
+        : root_( tree_node ), rule_( rule ) {}
     BuildTree operator()( size_t move )
     {
         shared_ptr< TreeNode > new_node( make_shared< TreeNode >(
@@ -418,7 +321,7 @@ struct BuildTree
         root_->children_.push_back( new_node );
 
         new_node->move_ = move;
-        return BuildTree( new_node );
+        return BuildTree( new_node, rule_ );
     }
 
     void update( double value, optional< size_t > best_move )
@@ -428,18 +331,20 @@ struct BuildTree
     }
 
     void print_tree_rec(
-        ostream& stream, Node& node, TreeNode const& treeNode,
+        ostream& stream, TreeNode const& treeNode,
         string name, bool is_best_move )
     {
+        vector< Player >& board = rule_.board;
+        const size_t n = rule_.n;
+
         // plot vertex
         stream << name << " [label=<";
-        const size_t n = node.n;
         for (size_t i = 0; i != n; ++i)
         {
             for (size_t j = 0; j != n; ++j)
             {
                 const size_t idx = i * n + j;
-                Player entry = node.board[idx];
+                Player entry = board[idx];
                 if (idx == treeNode.move_)
                     stream << "<B>";
                 stream << entry;
@@ -475,26 +380,27 @@ struct BuildTree
             stream << "]\n";
 
             // apply move
-            node.board[move] = treeNode.player_;
+            board[move] = treeNode.player_;
 
             print_tree_rec(
-                stream, node, **itr, new_name, is_new_best_move );
+                stream, **itr, new_name, is_new_best_move );
 
             // undo move
-            node.board[move] = not_set;
+            board[move] = not_set;
         }
     }
 
     // does not change node
-    void print( ostream& stream, Node& node  )
+    void print( ostream& stream )
     {
         stream << "graph T {\n"
                 << "node [fontname=\"Courier New\"]\n";
-        print_tree_rec( stream, node, *root_, "v", true );
+        print_tree_rec( stream, *root_, "v", true );
         stream << "}\n\n";
     }
 
     shared_ptr< TreeNode > root_;
+    tic_tac_toe::Rule& rule_;
 };
 
 struct NoBuildTree
@@ -503,26 +409,27 @@ struct NoBuildTree
     void update( double value, optional< size_t > best_move ) {}
 };
 
+template< typename MoveT >
 struct Algo
 {
     size_t depth;
-    ReorderT reorder;
-    EvalT eval;
+    ReOrderT< MoveT > reorder;
+    EvalT< MoveT > eval;
 };
 
-void game( Algo algo1, Algo algo2, Player player, Node& node,
-               vector< size_t >& moves, ostream* stream )
+template< typename MoveT >
+void game( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
+           Node< MoveT >& node, ostream* stream )
 {
-    Algo& algo = algo1;
+    Algo< MoveT >& algo = algo1;
 
     if (player == player2)
         swap( algo1, algo2 );
 
-    print_board( node );
-
     while (true)
     {
-        BuildTree build_tree( player );
+        tic_tac_toe::Rule& rule = *dynamic_cast< tic_tac_toe::Rule* >( &node.rule );
+        BuildTree build_tree( player, rule );
 
         Statistic stat;
         pair< double, optional< size_t > > result;
@@ -530,19 +437,19 @@ void game( Algo algo1, Algo algo2, Player player, Node& node,
         if (stream)
             // calc next move
             result = negamax(
-                node, algo.depth, player2_won, player1_won, player, moves,
-                algo.eval, algo.reorder, build_tree, stat );
+                node, algo.depth, player2_won, player1_won, player,
+                algo.eval, algo.reorder, build_tree );
         else
             result = negamax(
-                node, algo.depth, player2_won, player1_won, player, moves,
-                algo.eval, algo.reorder, NoBuildTree(), stat );
+                node, algo.depth, player2_won, player1_won, player,
+                algo.eval, algo.reorder, NoBuildTree());
 
         if (stream)
-            build_tree.print( *stream, node );
+            build_tree.print( *stream );
 
         // apply move
         if (result.second)
-            node.board[*result.second] = player;
+            node.rule.apply_move( *result.second, player);
 
         // print candidates
         TreeNode root = *build_tree.root_;
@@ -558,14 +465,14 @@ void game( Algo algo1, Algo algo2, Player player, Node& node,
                 cout << "\e[0m";
             cout << ", ";
         }
-        cout << endl;
 
-        print_board( node );
+        cout << endl;
+        node.rule.print();
         cout << endl;
 
         if (!result.second)
         {
-            Player winner = get_winner( node );
+            Player winner = node.rule.get_winner();
             if (winner == not_set)
                 cout << "draw" << endl;
             else
@@ -583,10 +490,11 @@ void game( Algo algo1, Algo algo2, Player player, Node& node,
 int main()
 {
     // quadratic board size
-    size_t n = 3;
-    Node node = { vector< Player >( n * n, not_set ), n };
+    const size_t n = 3;
+    using Rule = tic_tac_toe::Rule;
 
-    vector< size_t > moves;
+    Rule rule( n );
+    Node< size_t > node( rule );
 
     string file_name = "tree.gv";
 
@@ -594,20 +502,20 @@ int main()
     if (!file)
         cerr << "opening file '" << file_name << "' failed" << endl;
 
-    Shuffle shuffle;
-    ReorderT reorder =
-        [&shuffle](Node&, Player, vector< size_t >::iterator begin,
-                    vector< size_t >::iterator end) { shuffle( begin, end ); };
+    Shuffle< size_t > shuffle;
+    ReOrderT< size_t > reorder = bind( &Shuffle< size_t >::operator(), &shuffle, _1, _2 );
+    Algo< size_t > algo1 = { 2, reorder,
+        [rule]()
+        { return tic_tac_toe::simple_estimate::eval( rule ); }};
+    Algo< size_t > algo2 = { 6, reorder, []() { return 0.0; } };
 
-    Algo algo1 = { 2, reorder, &simple_estimate::eval };
-    Algo algo2 = { 6, reorder, []( Node const& ) { return 0.0; } };
+    Algo< size_t > user = {
+        0, [&rule]( vector< size_t >::iterator begin,
+                    vector< size_t >::iterator end )
+           { return tic_tac_toe::user_input( rule, begin, end ); },
+        []() { return 0.0; }};
 
-    Algo user = {
-        0, &user_input,
-        []( Node const& ) { return 0.0; },
-    };
-
-    game( user, algo2, player1, node, moves, &file );
+    game( user, algo2, player1, node, &file );
 
     return 0;
 }
