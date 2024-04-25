@@ -1,18 +1,8 @@
-#include <limits>
-#include <vector>
-#include <optional>
+#include "tree.h"
+
 #include <functional>
 #include <random>
-
-enum Player
-{
-    player1 = 1,
-    player2 = -1,
-    not_set = 0
-};
-
-const double player1_won = std::numeric_limits< double >::infinity();
-const double player2_won = -std::numeric_limits< double >::infinity();
+#include <algorithm>
 
 template< typename MoveT >
 struct GenericRule
@@ -37,10 +27,10 @@ struct Node
 };
 
 template< typename MoveT >
-using EvalT = std::function< double () >;
+using Eval = std::function< double () >;
 
 template< typename MoveT >
-using ReOrderT = std::function< void (
+using ReOrder = std::function< void (
     typename std::vector< MoveT >::iterator begin,
     typename std::vector< MoveT >::iterator end) >;
 
@@ -71,13 +61,16 @@ struct Statistic
     size_t count_;
 };
 
-template< typename BuildTreeT, typename MoveT >
-std::pair< double, std::optional< size_t > > negamax(
+template< typename MoveT >
+std::pair< double, std::optional< MoveT > > negamax(
     Node< MoveT > node, size_t depth, double alpha, double beta,
     Player player,
-    EvalT< MoveT > eval, ReOrderT< MoveT >& reorder,
-    BuildTreeT builder )
+    Eval< MoveT > eval, ReOrder< MoveT >& reorder,
+    Statistic* stat,
+    BuildTree< MoveT >* builder )
 {
+    if (stat)
+        (*stat)();
     const size_t candidates_begin = node.rule.moves.size();
     node.rule.generate_moves();
     const size_t candidates_end = node.rule.moves.size();
@@ -90,7 +83,7 @@ std::pair< double, std::optional< size_t > > negamax(
         reorder( node.rule.moves.begin() + candidates_begin,
                  node.rule.moves.begin() + candidates_end );
 
-    std::optional< size_t > best_move;
+    std::optional< MoveT > best_move;
     double value;
 
     if (is_terminal && winner != not_set)
@@ -103,20 +96,24 @@ std::pair< double, std::optional< size_t > > negamax(
         for (size_t i = candidates_begin; i != candidates_end; ++i)
         {
             node.move = node.rule.moves[i];
+            MoveT const& move = *node.move;
 
-            node.rule.apply_move( *node.move, player );
-
+            node.rule.apply_move( move, player );
+            if (builder)
+                builder->push( move );
             const double new_value = -negamax(
                 node, depth - 1, -beta, -alpha, Player( -player ),
-                eval, reorder, builder( *node.move )).first;
+                eval, reorder, stat, builder ).first;
 
             if (new_value > value)
             {
                 value = new_value;
-                best_move = node.move;
+                best_move = move;
             }
 
-            node.rule.undo_move( *node.move, player );
+            node.rule.undo_move( move, player );
+            if (builder)
+                builder->pop();
 
             alpha = std::max( alpha, value );
 
@@ -129,7 +126,8 @@ std::pair< double, std::optional< size_t > > negamax(
     if (!best_move && !is_terminal)
         best_move = node.rule.moves[candidates_begin];
 
-    builder.update( player * value, best_move );
+    if (builder)
+        builder->update( player * value, best_move );
 
     // remove generated moves
     node.rule.moves.resize( candidates_begin );
