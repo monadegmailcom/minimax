@@ -1,121 +1,108 @@
-#include "game.h"
+#include "tic_tac_toe.h"
 
-#include <fstream>
 #include <string>
 #include <cassert>
 
 using namespace std;
-using namespace placeholders;
 
 namespace tic_tac_toe {
 
-struct Rule : public GenericRule< size_t >
+Rule::Rule( size_t n )
+    : n( n ), board( n * n, not_set ) {}
+
+void Rule::print() const
 {
-    Rule( size_t n ) : n( n ), board( n * n, not_set ) {}
-
-    typedef size_t Move;
-    typedef vector< Player > State;
-
-    size_t n;
-    vector< Player > board;
-
-    void print()
+    for (size_t i = 0; i != n; ++i)
     {
+        for (size_t j = 0; j != n; ++j)
+            cout << board[i * n + j];
+        cout << '\n';
+    }
+}
+
+Player Rule::get_winner() const
+{
+    // rows
+    for (size_t i = 0; i != n; ++i)
+    {
+        const Player player = board[i * n];
+        if (player == not_set)
+            continue;
+        size_t count = 0;
+        for (size_t j = 0; j != n; ++j)
+            if (board[i * n + j] != player)
+                break;
+            else
+                ++count;
+        if (count == n)
+            return player;
+    }
+    // cols
+    for (size_t j = 0; j != n; ++j)
+    {
+        const Player player = board[j];
+        if (player == not_set)
+            continue;
+        size_t count = 0;
         for (size_t i = 0; i != n; ++i)
-        {
-            for (size_t j = 0; j != n; ++j)
-            {
-                Player entry = board[i * n + j];
-                cout << entry;
-            }
-            cout << '\n';
-        }
+            if (board[i * n + j] != player)
+                break;
+            else
+                ++count;
+        if (count == n)
+            return player;
+    }
+    // diag1
+    Player player = board[0];
+    if (player != not_set)
+    {
+        size_t count = 0;
+        for (size_t k = 0; k != n; ++k)
+            if (board[k * n + k] != player)
+                break;
+            else
+                ++count;
+        if (count == n)
+            return player;
+    }
+    // diag2
+    player = board[n - 1];
+    if (player != not_set)
+    {
+        size_t count = 0;
+        for (size_t k = 0; k != n; ++k)
+            if (board[k * n + n - 1 - k] != player)
+                break;
+            else
+                ++count;
+        if (count == n)
+            return player;
     }
 
-    Player get_winner() const
-    {
-        // rows
-        for (size_t i = 0; i != n; ++i)
-        {
-            const Player player = board[i * n];
-            if (player == not_set)
-                continue;
-            size_t count = 0;
-            for (size_t j = 0; j != n; ++j)
-                if (board[i * n + j] != player)
-                    break;
-                else
-                    ++count;
-            if (count == n)
-                return player;
-        }
-        // cols
+    return not_set;
+}
+
+void Rule::generate_moves()
+{
+    for (size_t i = 0; i != n; ++i)
         for (size_t j = 0; j != n; ++j)
         {
-            const Player player = board[j];
-            if (player == not_set)
-                continue;
-            size_t count = 0;
-            for (size_t i = 0; i != n; ++i)
-                if (board[i * n + j] != player)
-                    break;
-                else
-                    ++count;
-            if (count == n)
-                return player;
+            const size_t move = i * n + j;
+
+            if (board[move] == not_set)
+                moves.push_back( move );
         }
-        // diag1
-        Player player = board[0];
-        if (player != not_set)
-        {
-            size_t count = 0;
-            for (size_t k = 0; k != n; ++k)
-                if (board[k * n + k] != player)
-                    break;
-                else
-                    ++count;
-            if (count == n)
-                return player;
-        }
-        // diag2
-        player = board[n - 1];
-        if (player != not_set)
-        {
-            size_t count = 0;
-            for (size_t k = 0; k != n; ++k)
-                if (board[k * n + n - 1 - k] != player)
-                    break;
-                else
-                    ++count;
-            if (count == n)
-                return player;
-        }
+}
 
-        return not_set;
-    }
+void Rule::apply_move( Move const& move, Player player)
+{
+    board[move] = player;
+}
 
-    void generate_moves()
-    {
-        for (size_t i = 0; i != n; ++i)
-            for (size_t j = 0; j != n; ++j)
-            {
-                const size_t move = i * n + j;
-
-                if (board[move] == not_set)
-                    moves.push_back( move );
-            }
-    }
-
-    void apply_move(Move const& move, Player player)
-    {
-        board[move] = player;
-    }
-
-    void undo_move(Move const& move, Player)
-    {
-        board[move] = not_set;
-    }
-};
+void Rule::undo_move( Move const& move, Player)
+{
+    board[move] = not_set;
+}
 
 namespace trivial_estimate {
     double eval( Rule const& rule )
@@ -352,40 +339,3 @@ void print_tree( ostream& stream, TreeNode< size_t > const& root,
 }
 
 } // namespace tic_tac_toe {
-
-int main()
-{
-    // quadratic board size
-    const size_t n = 3;
-    using Rule = tic_tac_toe::Rule;
-
-    Rule rule( n );
-    Node< size_t > node( rule );
-
-    string file_name = "tree.gv";
-
-    ofstream file( file_name );
-    if (!file)
-        cerr << "opening file '" << file_name << "' failed" << endl;
-
-    Shuffle< size_t > shuffle;
-    ReOrder< size_t > reorder = bind( &Shuffle< size_t >::operator(), &shuffle, _1, _2 );
-    Algo< size_t > algo1 = { 2, reorder,
-        [&rule]()
-        { return tic_tac_toe::simple_estimate::eval( rule ); }};
-    Algo< size_t > algo2 = { 6, reorder, []() { return 0.0; } };
-
-    Algo< size_t > user = {
-        0, [&rule]( vector< size_t >::iterator begin,
-                    vector< size_t >::iterator end )
-           { return tic_tac_toe::user_input( rule, begin, end ); },
-        []() { return 0.0; }};
-
-    PrintTree< size_t > print_tree = [&file, &rule]( TreeNode< size_t > const& tree_node)
-        { tic_tac_toe::print_tree( file, tree_node, rule ); };
-
-//    game( user, algo2, player1, node );
-    game( algo1, algo2, player1, node );
-
-    return 0;
-}

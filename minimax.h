@@ -1,3 +1,5 @@
+#pragma once
+
 #include "tree.h"
 
 #include <functional>
@@ -9,7 +11,7 @@ struct GenericRule
 {
     std::vector< MoveT > moves;
 
-    virtual void print() = 0;
+    virtual void print() const = 0;
     virtual Player get_winner() const = 0;
     virtual void generate_moves() = 0;
     virtual void apply_move(MoveT const& move, Player player) = 0;

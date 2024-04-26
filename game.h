@@ -9,9 +9,6 @@ struct Algo
 };
 
 template< typename MoveT >
-using PrintTree = std::function< void (TreeNode< MoveT > const&) >;
-
-template< typename MoveT >
 void game( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
            Node< MoveT >& node, PrintTree< MoveT >* print_tree = 0)
 {

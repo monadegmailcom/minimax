@@ -46,3 +46,6 @@ struct BuildTree
 
     std::shared_ptr< TreeNode< MoveT > > root_;
 };
+
+template< typename MoveT >
+using PrintTree = std::function< void (TreeNode< MoveT > const&) >;
