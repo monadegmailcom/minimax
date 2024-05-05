@@ -5,12 +5,25 @@
 
 using namespace std;
 
+template<>
+Player extract_player( Player const& v ) { return v; }
+
 namespace tic_tac_toe {
 
-Rule::Rule( size_t n )
-    : n( n ), board( n * n, not_set ) {}
+Rule::Rule( Player* board )
+    : board( board ) {}
 
-void Rule::print() const
+void Rule::reset()
+{
+    fill_n( board, board + n * n, not_set );
+}
+
+void Rule::print_move( size_t const& move ) const
+{
+    cout << move;
+}
+
+void Rule::print_board() const
 {
     for (size_t i = 0; i != n; ++i)
     {
@@ -20,78 +33,70 @@ void Rule::print() const
     }
 }
 
+/*
+1 2 3
+4 5 6
+7 8 9
+
+01 02 03 04
+05 06 07 08
+09 10 11 12
+13 14 15 16
+
+0 1 2
+3 4 5
+6 7 8
+
+*/
+
+inline Player winner( size_t begin, size_t offset, Player* board )
+{
+    const Player player = board[begin];
+    if (player == not_set)
+        return not_set;
+    for (size_t k = 1; k != n; ++k)
+    {
+        begin += offset;
+        if (player != board[begin])
+            return not_set;
+    }
+    return player;
+}
+
 Player Rule::get_winner() const
 {
+    Player player = not_set;
     // rows
-    for (size_t i = 0; i != n; ++i)
+    for (size_t k = 0; k != n; ++k)
     {
-        const Player player = board[i * n];
-        if (player == not_set)
-            continue;
-        size_t count = 0;
-        for (size_t j = 0; j != n; ++j)
-            if (board[i * n + j] != player)
-                break;
-            else
-                ++count;
-        if (count == n)
+        player = winner (n * k, 1, board);
+        if (player != not_set)
             return player;
     }
     // cols
-    for (size_t j = 0; j != n; ++j)
+    for (size_t k = 0; k != n; ++k)
     {
-        const Player player = board[j];
-        if (player == not_set)
-            continue;
-        size_t count = 0;
-        for (size_t i = 0; i != n; ++i)
-            if (board[i * n + j] != player)
-                break;
-            else
-                ++count;
-        if (count == n)
+        player = winner (k, n, board);
+        if (player != not_set)
             return player;
     }
     // diag1
-    Player player = board[0];
+    player = winner (0, n + 1, board);
     if (player != not_set)
-    {
-        size_t count = 0;
-        for (size_t k = 0; k != n; ++k)
-            if (board[k * n + k] != player)
-                break;
-            else
-                ++count;
-        if (count == n)
-            return player;
-    }
+        return player;
     // diag2
-    player = board[n - 1];
+    player = winner (n - 1, n - 1, board);
     if (player != not_set)
-    {
-        size_t count = 0;
-        for (size_t k = 0; k != n; ++k)
-            if (board[k * n + n - 1 - k] != player)
-                break;
-            else
-                ++count;
-        if (count == n)
-            return player;
-    }
+        return player;
 
     return not_set;
 }
 
-void Rule::generate_moves()
+void Rule::generate_moves(vector< Move >& moves ) const
 {
-    for (size_t i = 0; i != n; ++i)
-        for (size_t j = 0; j != n; ++j)
-        {
-            const size_t move = i * n + j;
-
-            if (board[move] == not_set)
-                moves.push_back( move );
-        }
+    for (size_t idx = 0; idx != n * n; ++idx)
+        if (board[idx] == not_set)
+            moves.push_back( idx );
 }
 
 void Rule::apply_move( Move const& move, Player player)
@@ -120,118 +125,90 @@ namespace trivial_estimate {
 namespace simple_estimate {
     double row_player_score( Rule const& rule, const size_t i )
     {
-        const size_t n = rule.n;
-        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
         for (size_t j = 0; j != n; ++j)
         {
-            Player player = a[i * n + j];
+            Player player = rule.board[i * n + j];
             if (player == player1)
                 ++count1;
             else if (player == player2)
                 ++count2;
         }
-        if (count1 == n)
-            return player1_won;
-        else if (count2 == n)
-            return player2_won;
-        else if (count1 != 0 && count2 == 0)
-            return 1.0;
+        if (count1 != 0 && count2 == 0)
+            return double( count1 );
         else if (count2 != 0 && count1 == 0)
-            return -1.0;
+            return -double( count2 );
         else
             return 0.0;
     }
 
     double col_player_score( Rule const& rule, const size_t j )
     {
-        const size_t n = rule.n;
-        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
         for (size_t i = 0; i != n; ++i)
         {
-            Player player = a[i * n + j];
+            Player player = rule.board[i * n + j];
             if (player == player1)
                 ++count1;
             else if (player == player2)
                 ++count2;
         }
-        if (count1 == n)
-            return player1_won;
-        else if (count2 == n)
-            return player2_won;
-        else if (count1 != 0 && count2 == 0)
-            return 1.0;
+        if (count1 != 0 && count2 == 0)
+            return double( count1 );
         else if (count2 != 0 && count1 == 0)
-            return -1.0;
+            return -double( count2 );
         else
             return 0.0;
     }
 
     double diag1_player_score( Rule const& rule )
     {
-        const size_t n = rule.n;
-        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
         for (size_t k = 0; k != n; ++k)
         {
-            Player player = a[k * n + k];
+            Player player = rule.board[k * n + k];
             if (player == player1)
                 ++count1;
             else if (player == player2)
                 ++count2;
         }
-        if (count1 == n)
-            return player1_won;
-        else if (count2 == n)
-            return player2_won;
-        else if (count1 != 0 && count2 == 0)
-            return 1.0;
+        if (count1 != 0 && count2 == 0)
+            return double( count1 );
         else if (count2 != 0 && count1 == 0)
-            return -1.0;
+            return -double( count2 );
         else
             return 0.0;
     }
 
     double diag2_player_score( Rule const& rule )
     {
-        const size_t n = rule.n;
-        Player const* a = rule.board.data();
         size_t count1 = 0;
         size_t count2 = 0;
 
         for (size_t k = 0; k != n; ++k)
         {
-            Player player = a[k * n + n - 1 - k];
+            Player player = rule.board[k * n + n - 1 - k];
             if (player == player1)
                 ++count1;
             else if (player == player2)
                 ++count2;
         }
-        if (count1 == n)
-            return player1_won;
-        else if (count2 == n)
-            return player2_won;
-        else if (count1 != 0 && count2 == 0)
-            return 1.0;
+        if (count1 != 0 && count2 == 0)
+            return double( count1 );
         else if (count2 != 0 && count1 == 0)
-            return -1.0;
+            return -double( count2 );
         else
             return 0.0;
     }
 
-    // undefined, if both players have wins
     double eval( Rule const& rule )
     {
-        const size_t n = rule.n;
-        Player const* a = rule.board.data();
-
         double value = 0.0;
         for (size_t k = 0; k != n; ++k)
             value += row_player_score( rule, k ) + col_player_score( rule, k);
@@ -250,18 +227,18 @@ void user_input( Rule& rule,
     if (begin == end)
         return;
 
-    vector< Player >& board = rule.board;
-    rule.print();
+    Player* board = rule.board;
+    rule.print_board();
 
     size_t row, col, idx;
     do
     {
-        cout << "row (1-" << rule.n << ")? ";
+        cout << "row (1-" << n << ")? ";
         cin >> row;
-        cout << "col (1-" << rule.n << ")? ";
+        cout << "col (1-" << n << ")? ";
         cin >> col;
-        idx = (row - 1) * rule.n + col - 1;
-    } while (row == 0 || col == 0 || row > rule.n || col > rule.n || board[idx] != not_set);
+        idx = (row - 1) * n + col - 1;
+    } while (row == 0 || col == 0 || row > n || col > n || board[idx] != not_set);
 
     auto itr = find( begin, end, idx );
     assert (itr != end);
@@ -272,8 +249,7 @@ void print_tree_rec(
     ostream& stream, TreeNode< size_t > const& treeNode,
     Rule& rule, string name, bool is_best_move )
 {
-    vector< Player >& board = rule.board;
-    const size_t n = rule.n;
+    Player* board = rule.board;
 
     // plot vertex
     stream << name << " [label=<";

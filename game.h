@@ -9,7 +9,7 @@ struct Algo
 };
 
 template< typename MoveT >
-void game( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
+void game( std::vector< MoveT >& moves, Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
            Node< MoveT >& node, PrintTree< MoveT >* print_tree = 0)
 {
     Algo< MoveT >& algo = algo1;
@@ -28,7 +28,7 @@ void game( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
 
         // calc next move
         result = negamax(
-            node, algo.depth, player2_won, player1_won, player,
+            moves, node, algo.depth, player2_won, player1_won, player,
             algo.eval, algo.reorder, &stat, builder.get());
 
         std::cout << stat.count_ << " nodes build" << std::endl;
@@ -38,6 +38,8 @@ void game( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
 
             // print candidates
             TreeNode< MoveT > const& root = *(builder->root_);
+            std::cout << "candidates (" << root.children_.size()
+                      << ")" << std::endl;
             for (auto itr = root.children_.begin();
                 itr != root.children_.end(); ++itr)
             {
@@ -45,19 +47,20 @@ void game( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
                 assert (child.move_);
                 if (child.move_ == root.best_move_)
                     std::cout << "\e[1m";
-                std::cout << *child.move_ << " (" << child.value_ << ")";
+                node.rule.print_move( *child.move_ );
+                std::cout << " (" << child.value_ << ")";
                 if (child.move_ == root.best_move_)
                     std::cout << "\e[0m";
                 std::cout << ", ";
             }
+            std::cout << std::endl;
         }
 
         // apply move
         if (result.second)
             node.rule.apply_move( *result.second, player);
 
-        std::cout << std::endl;
-        node.rule.print();
+        node.rule.print_board();
         std::cout << std::endl;
 
         if (!result.second)
@@ -74,5 +77,16 @@ void game( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
         player = Player( -player );
 
         std::swap( algo1, algo2 );
+    }
+}
+
+template< typename MoveT >
+void arena( Algo< MoveT > algo1, Algo< MoveT > algo2, Player player,
+            Node< MoveT >& node, size_t rounds )
+{
+    vector< MoveT > moves;
+    for (; rounds; --rounds)
+    {
+        node.rule.reset();
     }
 }

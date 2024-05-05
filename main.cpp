@@ -6,21 +6,15 @@
 using namespace std;
 using namespace placeholders;
 
-int main()
+void run_tic_tac_toe()
 {
-    // quadratic board size
-    const size_t n = 3;
+    vector< size_t > moves;
+
     using Rule = tic_tac_toe::Rule;
 
-    Rule rule( n );
+    vector< Player > board( tic_tac_toe::n * tic_tac_toe::n, not_set );
+    Rule rule( board.data());
     Node< size_t > node( rule );
-
-    meta_tic_tac_toe::Rule mrule( n, n );
-    rule.board[1] = player1;
-    mrule.board[7] = make_pair( rule, not_set );
-    mrule.board[5] = make_pair( rule, player2 );
-    mrule.print();
-    return 0;
 
     string file_name = "tree.gv";
 
@@ -30,7 +24,7 @@ int main()
 
     Shuffle< size_t > shuffle;
     ReOrder< size_t > reorder = bind( &Shuffle< size_t >::operator(), &shuffle, _1, _2 );
-    Algo< size_t > algo1 = { 2, reorder,
+    Algo< size_t > algo1 = { 1, reorder,
         [&rule]()
         { return tic_tac_toe::simple_estimate::eval( rule ); }};
     Algo< size_t > algo2 = { 3, reorder, []() { return 0.0; } };
@@ -44,8 +38,46 @@ int main()
     PrintTree< size_t > print_tree = [&file, &rule]( TreeNode< size_t > const& tree_node)
         { tic_tac_toe::print_tree( file, tree_node, rule ); };
 
-//    game( user, algo2, player1, node );
-    game( user, algo2, player1, node, &print_tree );
+    //game( moves, user, algo1, player1, node, &print_tree );
+    game( moves, algo1, algo2, player1, node, &print_tree );
+}
+
+void run_meta_tic_tac_toe()
+{
+    using Rule = meta_tic_tac_toe::Rule;
+
+    vector< size_t > moves;
+//    ofstream pipe( "pipe" );
+//    if (!pipe)
+//        cerr << "cannot open pipe" << endl;
+
+    Rule rule;
+    Node< size_t > node( rule );
+
+    Shuffle< size_t > shuffle;
+    ReOrder< size_t > reorder = bind( &Shuffle< size_t >::operator(), &shuffle, _1, _2 );
+    Algo< size_t > algo1 = { 2, reorder,
+        [&rule]()
+        { return meta_tic_tac_toe::simple_estimate::eval( rule, 3.0 ); }};
+    Algo< size_t > algo2 = { 2, reorder,
+        [&rule]()
+        { return meta_tic_tac_toe::simple_estimate::eval( rule, 3.0 ); }};
+
+    Algo< size_t > user = {
+        0, [&rule]( vector< size_t >::iterator begin,
+                    vector< size_t >::iterator end )
+           { return meta_tic_tac_toe::user_input( rule, begin, end ); },
+        []() { return 0.0; }};
+
+    PrintTree< size_t > print_tree = []( TreeNode< size_t > const& tree_node) {};
+
+    game( moves, algo1, algo2, player1, node, &print_tree );
+}
+
+int main()
+{
+    //run_tic_tac_toe();
+    run_meta_tic_tac_toe();
 
     return 0;
 }

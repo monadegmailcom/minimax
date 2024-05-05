@@ -1,20 +1,26 @@
 #include "minimax.h"
 
+template< typename T >
+Player extract_player( T const& v );
+
 namespace tic_tac_toe {
 
-struct Rule : public GenericRule< size_t >
-{
-    typedef size_t Move;
+typedef size_t Move;
 
-    Rule( size_t n );
-    void print() const;
+constexpr size_t n = 3;
+
+struct Rule : public GenericRule< Move >
+{
+    Rule(Player*);
+    void reset();
+    void print_move( Move const& ) const;
+    void print_board() const;
     Player get_winner() const;
-    void generate_moves();
+    void generate_moves( std::vector< Move >& ) const;
     void apply_move( Move const& move, Player player);
     void undo_move( Move const& move, Player);
 
-    size_t n;
-    std::vector< Player > board;
+    Player* const board;
 };
 
 namespace trivial_estimate {
