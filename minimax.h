@@ -23,6 +23,12 @@ struct Node
 {
     Node(GenericRule< MoveT >& rule) : rule( rule ) {}
 
+    void reset()
+    {
+        move.reset();
+        rule.reset();
+    }
+
     GenericRule< MoveT >& rule;
 
     std::optional< MoveT > move;
@@ -33,6 +39,7 @@ using Eval = std::function< double () >;
 
 template< typename MoveT >
 using ReOrder = std::function< void (
+    Player,
     typename std::vector< MoveT >::iterator begin,
     typename std::vector< MoveT >::iterator end) >;
 
@@ -51,16 +58,52 @@ struct Shuffle
     std::mt19937 g_;
 };
 
-struct Statistic
+template< typename MoveT >
+struct ReorderByScore
 {
-    Statistic() : count_( 0 ) {}
+    ReorderByScore( GenericRule< MoveT >& rule, Eval< MoveT > eval )
+        : rule( rule ), eval( eval ) {}
 
-    void operator()()
+    void operator()( Player player, typename std::vector< MoveT >::iterator begin,
+                     typename std::vector< MoveT >::iterator end )
     {
-        ++count_;
+        shuffle( begin, end );
+        scores.clear();
+        for (auto itr = begin; itr != end; ++itr)
+        {
+            rule.apply_move( *itr, player );
+            scores.push_back( std::make_pair( eval(), *itr ));
+            rule.undo_move( *itr, player );
+        }
+
+        std::function< bool (std::pair< double, MoveT >,
+                             std::pair< double, MoveT >) > pred;
+        if (player == player1)
+            pred = [](auto lhs, auto rhs) { return lhs.first > rhs.first; };
+        else
+            pred = [](auto lhs, auto rhs) { return lhs.first < rhs.first; };
+        sort( scores.begin(), scores.end(), pred );
+
+        auto itr2 = scores.begin();
+        for (auto itr = begin; itr != end; ++itr, ++itr2)
+            *itr = itr2->second;
     }
 
-    size_t count_;
+    GenericRule< MoveT >& rule;
+    Eval< MoveT > eval;
+    Shuffle< MoveT > shuffle;
+    std::vector< std::pair< double, MoveT > > scores;
+};
+
+struct Statistic
+{
+    Statistic() : nodes( 0 ), wins( 0 ), draws( 0 ), losses( 0 ), rounds( 0 ) {}
+
+    size_t nodes;
+    size_t wins;
+    size_t draws;
+    size_t losses;
+    size_t rounds;
 };
 
 template< typename MoveT >
@@ -69,11 +112,11 @@ std::pair< double, std::optional< MoveT > > negamax(
     size_t depth, double alpha, double beta,
     Player player,
     Eval< MoveT > eval, ReOrder< MoveT > reorder,
-    Statistic* stat,
+    Statistic& stat,
     BuildTree< MoveT >* builder )
 {
-    if (stat)
-        (*stat)();
+    ++stat.nodes;
+
     const size_t candidates_begin = moves.size();
     node.rule.generate_moves( moves );
     const size_t candidates_end = moves.size();
@@ -83,7 +126,7 @@ std::pair< double, std::optional< MoveT > > negamax(
                        || candidates_begin == candidates_end;
 
     if (!is_terminal)
-        reorder( moves.begin() + candidates_begin,
+        reorder( player, moves.begin() + candidates_begin,
                  moves.begin() + candidates_end );
 
     std::optional< MoveT > best_move;

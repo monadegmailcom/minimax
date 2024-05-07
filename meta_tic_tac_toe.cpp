@@ -6,17 +6,17 @@ using namespace std;
 
 namespace meta_tic_tac_toe {
 
-Rule::Rule( ostream& stream )
+Rule::Rule()
     : board {not_set},
       meta_board( board.data() + n * n * item_size ),
-      terminals { false },
-      stream( stream )
+      terminals { false }
 {}
 
 void Rule::reset()
 {
-    fill_n( board.begin(), board.end(), not_set );
-    fill_n( terminals.begin(), terminals.end(), false );
+    fill( board.begin(), board.end(), not_set );
+    fill( terminals.begin(), terminals.end(), false );
+    move_stack.clear();
 }
 
 void Rule::update( size_t idx )
@@ -41,29 +41,15 @@ void Rule::print_move( size_t const& move ) const
     const ldiv_t p = ldiv( move, item_size);
     const ldiv_t outer_ij = ldiv( p.quot, n );
     const ldiv_t inner_ij = ldiv( p.rem, tic_tac_toe::n);
-    stream << "(" << outer_ij.quot + 1 << "/" << outer_ij.rem + 1
+    cout << "(" << outer_ij.quot + 1 << "/" << outer_ij.rem + 1
            << ", " << inner_ij.quot + 1 << "/" << inner_ij.rem + 1
            << ")" << flush;
 }
 
-void Rule::print_board() const
+void print_board_impl(
+    Rule const& rule, ostream& stream, string const& linebreak,
+    string const& emph_start, string const& emph_end )
 {
-    /*
-    stream << "meta board" << endl;
-    for (size_t i = 0; i != n; ++i)
-    {
-        for (size_t j = 0; j != n; ++j)
-            stream << meta_board[i * n + j] << " ";
-        stream << "\n";
-    }
-    stream << "terminals" << endl;
-    for (size_t i = 0; i != n; ++i)
-    {
-        for (size_t j = 0; j != n; ++j)
-            stream << (int)terminals[i * n + j] << " ";
-        stream << "\n";
-    }
-*/
     const size_t mid = tic_tac_toe::n / 2;
     for (size_t i = 0; i != n; ++i)
     {
@@ -72,11 +58,12 @@ void Rule::print_board() const
             for (size_t j = 0; j != n; ++j)
             {
                 const size_t idx = i * n + j;
-                if (terminals[idx])
+                if (rule.terminals[idx] && !rule.move_stack.empty()
+                    && rule.move_stack.back() / item_size != idx)
                 {
                     for (size_t j2 = 0; j2 != tic_tac_toe::n; ++j2)
                         if (i2 == mid && j2 == mid)
-                            stream << meta_board[idx] << ' ';
+                            stream << rule.meta_board[idx] << ' ';
                         else
                             stream << "  ";
                 }
@@ -84,20 +71,35 @@ void Rule::print_board() const
                     for (size_t j2 = 0; j2 != tic_tac_toe::n; ++j2)
                     {
                         const size_t move = idx * item_size + i2 * tic_tac_toe::n + j2;
-                        const bool is_last = !move_stack.empty() && move_stack.back() == move;
+                        const bool is_last =
+                            !rule.move_stack.empty() && rule.move_stack.back() == move;
                         if (is_last)
-                            stream << "\e[1m";
-                        stream << board[idx * item_size + i2 * tic_tac_toe::n + j2] << ' ';
+                            stream << emph_start;
+                        stream << rule.board[idx * item_size + i2 * tic_tac_toe::n + j2] << ' ';
                         if (is_last)
-                            stream << "\e[0m";
+                            stream << emph_end;
                     }
                 stream << ' ';
             }
-            stream << '\n';
+            stream << linebreak;
         }
-        stream << '\n';
+        stream << linebreak;
     }
-    stream << flush;
+}
+
+void Rule::print_board() const
+{
+    print_board_impl( *this, cout, "\n", "\e[1m", "\e[0m" );
+
+    bool is_terminal = true;
+    for (bool terminal : terminals)
+        if (!terminal)
+        {
+            is_terminal = false;
+            break;
+        }
+    if (is_terminal || get_winner() != not_set)
+        tic_tac_toe::Rule( meta_board ).print_board();
 }
 
 Player Rule::get_winner() const
@@ -228,4 +230,60 @@ namespace simple_estimate {
         return value;
     }
 } // namespace simple_estimate {
+
+void print_tree_rec(
+    ostream& stream, TreeNode< size_t > const& treeNode,
+    Rule& rule, string name, bool is_best_move )
+{
+    Player* board = rule.board.data();
+
+    // plot vertex
+    stream << name << " [label=<";
+    print_board_impl( rule, stream, "<BR/>", "<B>", "</B>");
+    stream << ">";
+    if (is_best_move)
+        stream << " color=\"red\"";
+
+    if (treeNode.player_ == player1)
+        stream << " shape=box";
+    stream << "]\n";
+
+    for (vector< shared_ptr< TreeNode< size_t > > >::const_iterator
+            itr = treeNode.children_.begin();
+            itr != treeNode.children_.end(); ++itr)
+    {
+        assert ((**itr).move_);
+        const size_t move = *(**itr).move_;
+
+        const string new_name = name + "_" + to_string( move );
+        bool is_new_best_move =
+            is_best_move && move == treeNode.best_move_;
+
+        // plot edge to child
+        stream << name << " -- " << new_name
+            << " [label=\"" << (**itr).value_ << "\"";
+        if (is_new_best_move)
+            stream << " color=\"red\"";
+        stream << "]\n";
+
+        // apply move
+        rule.apply_move( move, treeNode.player_);
+
+        print_tree_rec(
+            stream, **itr, rule, new_name, is_new_best_move );
+
+        // undo move
+        rule.undo_move( move, treeNode.player_ );
+    }
+}
+
+void print_tree( ostream& stream, TreeNode< size_t > const& root,
+                 Rule& rule )
+{
+    stream << "graph T {\n"
+            << "node [fontname=\"Courier New\"]\n";
+    print_tree_rec( stream, root, rule, "v", true );
+    stream << "}\n\n";
+}
+
 } // namespace meta_tic_tac_toe {

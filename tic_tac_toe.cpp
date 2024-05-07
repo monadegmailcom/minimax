@@ -15,7 +15,7 @@ Rule::Rule( Player* board )
 
 void Rule::reset()
 {
-    fill_n( board, board + n * n, not_set );
+    fill( board, board + n * n, not_set );
 }
 
 void Rule::print_move( size_t const& move ) const
@@ -28,26 +28,10 @@ void Rule::print_board() const
     for (size_t i = 0; i != n; ++i)
     {
         for (size_t j = 0; j != n; ++j)
-            cout << board[i * n + j];
+            cout << board[i * n + j] << ' ';
         cout << '\n';
     }
 }
-
-/*
-1 2 3
-4 5 6
-7 8 9
-
-01 02 03 04
-05 06 07 08
-09 10 11 12
-13 14 15 16
-
-0 1 2
-3 4 5
-6 7 8
-
-*/
 
 inline Player winner( size_t begin, size_t offset, Player* board )
 {
@@ -304,7 +288,6 @@ void print_tree_rec(
     }
 }
 
-// does not change node
 void print_tree( ostream& stream, TreeNode< size_t > const& root,
                  Rule& rule )
 {

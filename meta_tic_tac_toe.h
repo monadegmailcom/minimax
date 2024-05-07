@@ -12,7 +12,7 @@ constexpr size_t item_size = tic_tac_toe::n * tic_tac_toe::n;
 
 struct Rule : public GenericRule< Move >
 {
-    Rule( std::ostream& stream = std::cout );
+    Rule();
     void reset();
     void print_move( Move const& ) const;
     void print_board() const;
@@ -28,7 +28,6 @@ struct Rule : public GenericRule< Move >
 
     std::vector< Move > move_stack;
     std::array< bool, n * n > terminals;
-    std::ostream& stream;
 };
 
 void user_input(
@@ -39,5 +38,8 @@ void user_input(
 namespace simple_estimate {
 double eval( Rule& rule, double factor );
 } // namespace simple_estimate {
+
+void print_tree( std::ostream& stream, TreeNode< size_t > const& root,
+                 Rule& rule );
 
 } // namespace meta_tic_tac_toe {
