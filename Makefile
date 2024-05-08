@@ -1,6 +1,6 @@
 CC=g++
-#FLAGS=-std=c++17 -g -I. -c
-FLAGS=-std=c++17 -O3 -I. -c
+FLAGS=-std=c++17 -g -I. -c
+#FLAGS=-std=c++17 -O3 -I. -c
 DEPS=game.h minimax.h player.h tree.h
 OBJS=player.o main.o tic_tac_toe.o meta_tic_tac_toe.o game.o
 minimax: $(HEADER) $(OBJS)

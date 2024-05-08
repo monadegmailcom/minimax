@@ -76,7 +76,7 @@ void run_meta_tic_tac_toe()
     ReOrder< size_t > reorder2 =
         bind( &ReorderByScore< size_t >::operator(), &reorder_by_score2, _1, _2, _3 );
 
-    Algo< size_t > algo1 = { Statistic(), 4, reorder1, eval1 };
+    Algo< size_t > algo1 = { Statistic(), 2, reorder1, eval1 };
     Algo< size_t > algo2 = { Statistic(), 2, reorder2, eval2 };
 
     Algo< size_t > user = {
@@ -96,10 +96,9 @@ void run_meta_tic_tac_toe()
 
     PrintTree< size_t > print_tree = []( TreeNode< size_t > const& tree_node) {};
 
-    const size_t rounds = 1000;
+    const size_t rounds = 2;
     //game( moves, algo1, algo2, player1, node, true, &print_tree );
-    arena( algo1, algo2, player1, node, rounds, true);
-    cout << make_pair( algo1.stat, algo2.stat ) << endl;
+    arena( algo1, algo2, player2, node, rounds, true);
 }
 
 int main()

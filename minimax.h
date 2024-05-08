@@ -21,7 +21,11 @@ struct GenericRule
 template< typename MoveT >
 struct Node
 {
-    Node(GenericRule< MoveT >& rule) : rule( rule ) {}
+    Node(GenericRule< MoveT >& rule) : rule( rule )
+    { ++count; }
+
+    Node( Node const& node ) : rule( node.rule ), move( node.move )
+    { ++count; }
 
     void reset()
     {
@@ -32,7 +36,10 @@ struct Node
     GenericRule< MoveT >& rule;
 
     std::optional< MoveT > move;
+    static size_t count;
 };
+
+template< typename MoveT > size_t Node< MoveT >::count = 0;
 
 template< typename MoveT >
 using Eval = std::function< double () >;
@@ -95,28 +102,14 @@ struct ReorderByScore
     std::vector< std::pair< double, MoveT > > scores;
 };
 
-struct Statistic
-{
-    Statistic() : nodes( 0 ), wins( 0 ), draws( 0 ), losses( 0 ), rounds( 0 ) {}
-
-    size_t nodes;
-    size_t wins;
-    size_t draws;
-    size_t losses;
-    size_t rounds;
-};
-
 template< typename MoveT >
 std::pair< double, std::optional< MoveT > > negamax(
     std::vector< MoveT >& moves, Node< MoveT > node,
     size_t depth, double alpha, double beta,
     Player player,
     Eval< MoveT > eval, ReOrder< MoveT > reorder,
-    Statistic& stat,
     BuildTree< MoveT >* builder )
 {
-    ++stat.nodes;
-
     const size_t candidates_begin = moves.size();
     node.rule.generate_moves( moves );
     const size_t candidates_end = moves.size();
@@ -149,7 +142,7 @@ std::pair< double, std::optional< MoveT > > negamax(
                 builder->push( move );
             const double new_value = -negamax(
                 moves, node, depth - 1, -beta, -alpha, Player( -player ),
-                eval, reorder, stat, builder ).first;
+                eval, reorder, builder ).first;
 
             if (new_value > value)
             {

@@ -2,6 +2,15 @@
 
 #include <iostream>
 
+struct Statistic
+{
+    Statistic() : wins( 0 ), draws( 0 ), losses( 0 ) {}
+
+    size_t wins;
+    size_t draws;
+    size_t losses;
+};
+
 template< typename MoveT >
 struct Algo
 {
@@ -32,11 +41,10 @@ void game( std::vector< MoveT >& moves, Algo< MoveT >& algo1, Algo< MoveT >& alg
         // calc next move
         result = negamax(
             moves, node, algo->depth, player2_won, player1_won, player,
-            algo->eval, algo->reorder, algo->stat, builder.get());
+            algo->eval, algo->reorder, builder.get());
 
         if (trace)
-            std::cout << "player " << player << ", "
-                        << algo->stat.nodes << " accumulated nodes build" << std::endl;
+            std::cout << node.count << " accumulated nodes build" << std::endl;
 
         if (!result.second)
         {
@@ -113,17 +121,21 @@ void arena( Algo< MoveT >& algo1, Algo< MoveT >& algo2, Player player,
             Node< MoveT >& node, size_t rounds, bool alternate )
 {
     std::vector< MoveT > moves;
-    for (; rounds; --rounds)
+    for (size_t idx = 0; idx != rounds; ++idx)
     {
+        std::cout << '.' << std::flush;
         node.reset();
-        ++algo1.stat.rounds;
-        ++algo2.stat.rounds;
 
         game( moves, algo1, algo2, player, node, false, (PrintTree< MoveT >*) nullptr );
         if (alternate)
             player = Player( -player );
     }
+    std::cout
+         << std::endl
+         << "rounds: " << rounds << std::endl
+         << "player1:\n" << std::make_pair( algo1.stat, rounds ) << std::endl
+         << "player2:\n" << std::make_pair( algo2.stat, rounds ) << std::endl
+         << "avg node count (for both) = " << double( node.count ) / rounds << std::endl;
 }
 
-std::ostream& operator<<( std::ostream&, Statistic const& );
-std::ostream& operator<<( std::ostream&, std::pair< Statistic, Statistic > const& );
+std::ostream& operator<<( std::ostream&, std::pair< Statistic, size_t > const& );
