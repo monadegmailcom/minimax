@@ -1,7 +1,6 @@
 #include "minimax.h"
 
-template< typename T >
-Player extract_player( T const& v );
+#include <array>
 
 namespace tic_tac_toe {
 
@@ -13,14 +12,16 @@ struct Rule : public GenericRule< Move >
 {
     Rule(Player*);
     void reset();
-    void print_move( Move const& ) const;
-    void print_board() const;
+    void snapshot();
+    void print_move( std::ostream&, Move const& ) const;
+    void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;
     void generate_moves( std::vector< Move >& ) const;
     void apply_move( Move const& move, Player player);
     void undo_move( Move const& move, Player);
 
     Player* const board;
+    std::array< Player, n * n > board_snapshot;
 };
 
 namespace trivial_estimate {
@@ -34,8 +35,5 @@ double eval( Rule const& rule );
 void user_input( Rule& rule,
     std::vector< size_t >::iterator begin,
     std::vector< size_t >::iterator end );
-
-void print_tree( std::ostream& stream, TreeNode< size_t > const& root,
-                 Rule& rule );
 
 } // namespace tic_tac_toe {

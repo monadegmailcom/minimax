@@ -5,31 +5,41 @@
 
 using namespace std;
 
-template<>
-Player extract_player( Player const& v ) { return v; }
-
 namespace tic_tac_toe {
 
-Rule::Rule( Player* board )
-    : board( board ) {}
+Rule::Rule( Player* board ) : board( board ), board_snapshot { not_set } {}
 
 void Rule::reset()
 {
-    fill( board, board + n * n, not_set );
+    copy_n( board_snapshot.begin(), n * n, board );
 }
 
-void Rule::print_move( size_t const& move ) const
+void Rule::snapshot()
 {
-    cout << move;
+    copy_n( board, n * n, board_snapshot.begin());
 }
 
-void Rule::print_board() const
+void Rule::print_move( ostream& stream, size_t const& move ) const
+{
+    stream << move;
+}
+
+void Rule::print_board( OutStream& out_stream, optional< Move > const& last_move ) const
 {
     for (size_t i = 0; i != n; ++i)
     {
         for (size_t j = 0; j != n; ++j)
-            cout << board[i * n + j] << ' ';
-        cout << '\n';
+        {
+            const size_t idx = i * n + j;
+            if (last_move && *last_move == idx)
+                out_stream.stream << out_stream.emph_start;
+            out_stream.stream << board[idx];
+            if (j != n - 1)
+                out_stream.stream << out_stream.space;
+            if (last_move && *last_move == idx)
+                out_stream.stream << out_stream.emph_end;
+        }
+        out_stream.stream << out_stream.linebreak;
     }
 }
 
@@ -212,8 +222,6 @@ void user_input( Rule& rule,
         return;
 
     Player* board = rule.board;
-    rule.print_board();
-
     size_t row, col, idx;
     do
     {
@@ -227,74 +235,6 @@ void user_input( Rule& rule,
     auto itr = find( begin, end, idx );
     assert (itr != end);
     iter_swap( begin, itr );
-}
-
-void print_tree_rec(
-    ostream& stream, TreeNode< size_t > const& treeNode,
-    Rule& rule, string name, bool is_best_move )
-{
-    Player* board = rule.board;
-
-    // plot vertex
-    stream << name << " [label=<";
-    for (size_t i = 0; i != n; ++i)
-    {
-        for (size_t j = 0; j != n; ++j)
-        {
-            const size_t idx = i * n + j;
-            Player entry = board[idx];
-            if (idx == treeNode.move_)
-                stream << "<B>";
-            stream << entry;
-            if (idx == treeNode.move_)
-                stream << "</B>";
-        }
-        stream << "<BR/>";
-    }
-    stream << ">";
-    if (is_best_move)
-        stream << " color=\"red\"";
-
-    if (treeNode.player_ == player1)
-        stream << " shape=box";
-    stream << "]\n";
-
-    for (vector< shared_ptr< TreeNode< size_t > > >::const_iterator
-            itr = treeNode.children_.begin();
-            itr != treeNode.children_.end(); ++itr)
-    {
-        assert ((**itr).move_);
-        const size_t move = *(**itr).move_;
-
-        const string new_name = name + "_" + to_string( move );
-        bool is_new_best_move =
-            is_best_move && move == treeNode.best_move_;
-
-        // plot edge to child
-        stream << name << " -- " << new_name
-            << " [label=\"" << (**itr).value_ << "\"";
-        if (is_new_best_move)
-            stream << " color=\"red\"";
-        stream << "]\n";
-
-        // apply move
-        board[move] = treeNode.player_;
-
-        print_tree_rec(
-            stream, **itr, rule, new_name, is_new_best_move );
-
-        // undo move
-        board[move] = not_set;
-    }
-}
-
-void print_tree( ostream& stream, TreeNode< size_t > const& root,
-                 Rule& rule )
-{
-    stream << "graph T {\n"
-            << "node [fontname=\"Courier New\"]\n";
-    print_tree_rec( stream, root, rule, "v", true );
-    stream << "}\n\n";
 }
 
 } // namespace tic_tac_toe {

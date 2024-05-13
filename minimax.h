@@ -1,47 +1,45 @@
 #pragma once
 
-#include "tree.h"
-
 #include <functional>
 #include <random>
 #include <algorithm>
+#include <optional>
+
+#include "player.h"
+
+template< typename MoveT >
+struct Vertex
+{
+    Vertex( std::optional< MoveT > const& move )
+        : move( move ), value( 0.0 ), child_count( 0 ) {}
+    std::optional< MoveT > move;
+    double value;
+    size_t child_count;
+    std::optional< MoveT > best_move;
+};
+
+struct OutStream
+{
+    std::ostream& stream;
+    std::string emph_start;
+    std::string emph_end;
+    std::string linebreak;
+    std::string space;
+};
 
 template< typename MoveT >
 struct GenericRule
 {
     virtual void reset() = 0;
-    virtual void print_move( MoveT const& ) const = 0;
-    virtual void print_board() const = 0;
+    virtual void snapshot() = 0;
+    virtual void print_move( std::ostream&, MoveT const& ) const = 0;
+    virtual void print_board( OutStream&, std::optional< MoveT > const& last_move ) const = 0;
     virtual Player get_winner() const = 0;
     virtual void generate_moves( std::vector< MoveT >& ) const = 0;
     virtual void apply_move(MoveT const& move, Player player) = 0;
     virtual void undo_move(MoveT const& move, Player) = 0;
 };
 
-template< typename MoveT >
-struct Node
-{
-    Node(GenericRule< MoveT >& rule) : rule( rule )
-    { ++count; }
-
-    Node( Node const& node ) : rule( node.rule ), move( node.move )
-    { ++count; }
-
-    void reset()
-    {
-        move.reset();
-        rule.reset();
-    }
-
-    GenericRule< MoveT >& rule;
-
-    std::optional< MoveT > move;
-    static size_t count;
-};
-
-template< typename MoveT > size_t Node< MoveT >::count = 0;
-
-template< typename MoveT >
 using Eval = std::function< double () >;
 
 template< typename MoveT >
@@ -68,7 +66,7 @@ struct Shuffle
 template< typename MoveT >
 struct ReorderByScore
 {
-    ReorderByScore( GenericRule< MoveT >& rule, Eval< MoveT > eval )
+    ReorderByScore( GenericRule< MoveT >& rule, Eval eval )
         : rule( rule ), eval( eval ) {}
 
     void operator()( Player player, typename std::vector< MoveT >::iterator begin,
@@ -97,79 +95,115 @@ struct ReorderByScore
     }
 
     GenericRule< MoveT >& rule;
-    Eval< MoveT > eval;
+    Eval eval;
     Shuffle< MoveT > shuffle;
     std::vector< std::pair< double, MoveT > > scores;
 };
 
 template< typename MoveT >
-std::pair< double, std::optional< MoveT > > negamax(
-    std::vector< MoveT >& moves, Node< MoveT > node,
-    size_t depth, double alpha, double beta,
-    Player player,
-    Eval< MoveT > eval, ReOrder< MoveT > reorder,
-    BuildTree< MoveT >* builder )
+struct Minimax
 {
-    const size_t candidates_begin = moves.size();
-    node.rule.generate_moves( moves );
-    const size_t candidates_end = moves.size();
+    Minimax( GenericRule< MoveT >& rule, bool trace ) : rule( rule ), trace( trace )
+    {}
 
-    const Player winner = node.rule.get_winner();
-    bool is_terminal = winner != not_set
-                       || candidates_begin == candidates_end;
+    GenericRule< MoveT >& rule;
+    bool trace;
+    Eval eval;
+    ReOrder< MoveT > reorder;
+    std::vector< MoveT > moves;
+    std::vector< Vertex< MoveT > > vertices;
 
-    if (!is_terminal)
-        reorder( player, moves.begin() + candidates_begin,
-                 moves.begin() + candidates_end );
+    static size_t count;
+    static size_t max_moves;
 
-    std::optional< MoveT > best_move;
-    double value;
-
-    if (is_terminal && winner != not_set)
-        value = player * winner * player1_won;
-    else if (is_terminal || !depth)
-        value = player * eval();
-    else
+    double operator()( size_t depth, Player player )
     {
-        value = player2_won;
-        for (size_t i = candidates_begin; i != candidates_end; ++i)
-        {
-            node.move = moves[i];
-            MoveT const& move = *node.move;
+        moves.clear();
+        vertices.clear();
 
-            node.rule.apply_move( move, player );
-            if (builder)
-                builder->push( move );
-            const double new_value = -negamax(
-                moves, node, depth - 1, -beta, -alpha, Player( -player ),
-                eval, reorder, builder ).first;
+        vertices.push_back( Vertex< MoveT >( std::optional< MoveT >()));
+
+        return rec( depth, player2_won, player1_won, player );
+    }
+
+    double rec( size_t depth, double alpha, double beta, Player player )
+    {
+        ++count;
+
+        // if we have a winner, we are done
+        const Player winner = rule.get_winner();
+        if (winner != not_set)
+            return player * winner * player1_won;
+
+        // save previous count of moves
+        const size_t prev_size = moves.size();
+        rule.generate_moves( moves );
+        const size_t new_size = moves.size();
+
+        // if no moves generated, we are done
+        if (prev_size == new_size)
+            return 0.0;
+
+        // apply reordering of generated moves
+        reorder( player, moves.begin() + prev_size, moves.end());
+
+        // if max depth reached, we are done and return with a score
+        if (!depth)
+            return player * eval();
+
+        double value = player2_won;
+        size_t best_move = prev_size;
+        size_t idx = prev_size;
+        const size_t prev_vertex_idx = vertices.size() - 1;
+        size_t vertex_count = 0;
+        for (; idx != new_size; ++idx)
+        {
+            rule.apply_move( moves[idx], player );
+
+            const size_t vertex_idx = vertices.size();
+            if (trace)
+            {
+                ++vertex_count;
+                vertices.push_back( Vertex< MoveT >( moves[idx] ));
+            }
+
+            const double new_value =
+                -rec( depth - 1, -beta, -alpha, Player( -player ));
+
+            if (trace)
+                vertices[vertex_idx].value = player * new_value;
+
+            rule.undo_move( moves[idx], player );
+
+            if (moves.size() > max_moves)
+                max_moves = moves.size();
+
+            moves.resize( new_size );
 
             if (new_value > value)
             {
                 value = new_value;
-                best_move = move;
+                best_move = idx;
             }
-
-            node.rule.undo_move( move, player );
-            if (builder)
-                builder->pop();
 
             alpha = std::max( alpha, value );
 
             if (alpha >= beta)
                 break;
         }
+
+        if (trace)
+        {
+            Vertex< MoveT >& vertex = vertices[prev_vertex_idx];
+            vertex.child_count = vertex_count;
+            vertex.best_move = moves[best_move];
+        }
+
+        iter_swap( moves.begin() + prev_size, moves.begin() + best_move );
+
+        return value;
     }
+};
 
-    // choose some move if no best move is set
-    if (!best_move && !is_terminal)
-        best_move = moves[candidates_begin];
-
-    if (builder)
-        builder->update( player * value, best_move );
-
-    // remove generated moves
-    moves.resize( candidates_begin );
-
-    return std::make_pair( value, best_move );
-}
+template< typename MoveT > size_t Minimax< MoveT >::count = 0;
+template< typename MoveT > size_t Minimax< MoveT >::max_moves = 0;

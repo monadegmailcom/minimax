@@ -1,51 +1,74 @@
-#include "player.h"
+#include "minimax.h"
 
 #include <vector>
-#include <memory>
-#include <optional>
+#include <iostream>
+#include <sstream>
+
+void print_preamble( std::ostream& );
+void print_closing( std::ostream& );
 
 template< typename MoveT >
-struct TreeNode
+struct PrintTree
 {
-    TreeNode( Player player, std::optional< MoveT > move,
-              std::shared_ptr< TreeNode > parent )
-        : player_( player ), move_( move ), parent_( parent ) {}
-    Player player_;
-    double value_;
-    std::optional< MoveT > move_;
-    std::optional< MoveT > best_move_;
-    std::vector< std::shared_ptr< TreeNode > > children_;
-    std::shared_ptr< TreeNode > parent_;
+    PrintTree( std::ostream& stream, std::vector< Vertex< MoveT > > const& vertices,
+               GenericRule< MoveT >& rule, Player player ) :
+        stream( stream ), vertices( vertices ), rule( rule ),
+        out_stream( OutStream { stream, "<B>", "</B>", "<BR/>", "&nbsp;" } ),
+        vertex_idx( 0 )
+    {
+        assert (!vertices.empty());
+        print_preamble( stream );
+        rec( "v", true, player );
+        print_closing( stream );
+    }
+
+    void rec( std::string const& name, bool is_best_thread, Player player )
+    {
+        // print vertex
+        stream << "\"" << name << "\" [label=<";
+        Vertex< MoveT > const& vertex = vertices[vertex_idx];
+        rule.print_board( out_stream, vertex.move );
+        ++vertex_idx;
+
+        stream << ">";
+
+        if (is_best_thread)
+            stream << " color=\"red\"";
+
+        if (player == player1)
+            stream << " shape=box";
+        stream << "]\n";
+
+        for (size_t idx = vertex.child_count; idx; --idx)
+        {
+            Vertex< MoveT > const& child = vertices[vertex_idx];
+
+            std::ostringstream s;
+            rule.print_move( s, *child.move );
+            const std::string new_name = name + " " + s.str();
+
+            // plot edge to child
+            stream << "\"" << name << "\"" << " -- \"" << new_name << "\""
+                   << " [label=\"" << child.value << "\"";
+            if (is_best_thread && child.move == vertex.best_move)
+                stream << " color=\"red\"";
+            stream << "]\n";
+
+            // apply move
+            rule.apply_move( *child.move, player );
+
+            rec(
+                new_name, is_best_thread && child.move == vertex.best_move,
+                Player( -player ));
+
+            // undo move
+            rule.undo_move( *child.move, player );
+        }
+    }
+
+    std::ostream& stream;
+    std::vector< Vertex< MoveT > > const& vertices;
+    GenericRule< MoveT >& rule;
+    OutStream out_stream;
+    size_t vertex_idx;
 };
-
-template< typename MoveT >
-struct BuildTree
-{
-    BuildTree( Player player )
-        : root_( std::make_shared< TreeNode< MoveT > >(
-                    player, std::optional< MoveT >(),
-                    std::shared_ptr< TreeNode< MoveT > >())) {}
-    void push( MoveT const& move )
-    {
-        auto new_node( std::make_shared< TreeNode< MoveT > >(
-                Player (-root_->player_ ), move, root_ ));
-        root_->children_.push_back( new_node );
-        root_ = new_node;
-    }
-
-    void pop()
-    {
-        root_ = root_->parent_;
-    }
-
-    void update( double value, std::optional< size_t > best_move )
-    {
-        root_->value_ = value;
-        root_->best_move_ = best_move;
-    }
-
-    std::shared_ptr< TreeNode< MoveT > > root_;
-};
-
-template< typename MoveT >
-using PrintTree = std::function< void (TreeNode< MoveT > const&) >;

@@ -1,8 +1,8 @@
 CC=g++
-FLAGS=-std=c++17 -g -I. -c
-#FLAGS=-std=c++17 -O3 -I. -c
+FLAGS=-std=c++17 -g -I. -c # debug
+#FLAGS=-std=c++17 -O3 -NDEBUG -I. -c # release
 DEPS=game.h minimax.h player.h tree.h
-OBJS=player.o main.o tic_tac_toe.o meta_tic_tac_toe.o game.o
+OBJS=player.o main.o tic_tac_toe.o meta_tic_tac_toe.o game.o tree.o
 minimax: $(HEADER) $(OBJS)
 	$(CC) -o minimax $(OBJS)
 clean:
@@ -17,3 +17,5 @@ meta_tic_tac_toe.o: meta_tic_tac_toe.cpp $(DEPS) meta_tic_tac_toe.h tic_tac_toe.
 	$(CC) $(FLAGS) meta_tic_tac_toe.cpp
 game.o: game.cpp $(DEPS)
 	$(CC) $(FLAGS) game.cpp
+tree.o: tree.cpp $(DEPS)
+	$(CC) $(FLAGS) tree.cpp

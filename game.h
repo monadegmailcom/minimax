@@ -1,4 +1,4 @@
-#include "minimax.h"
+#include "tree.h"
 
 #include <iostream>
 
@@ -17,12 +17,12 @@ struct Algo
     Statistic stat;
     size_t depth;
     ReOrder< MoveT > reorder;
-    Eval< MoveT > eval;
+    Eval eval;
 };
 
 template< typename MoveT >
-void game( std::vector< MoveT >& moves, Algo< MoveT >& algo1, Algo< MoveT >& algo2, Player player,
-           Node< MoveT >& node, bool trace = true, PrintTree< MoveT >* print_tree = 0)
+void game( Minimax< MoveT >& minimax, Algo< MoveT >& algo1, Algo< MoveT >& algo2,
+           Player player, bool trace = true, std::ostream* gv = 0)
 {
     Algo< MoveT >* algo = &algo1;
     Algo< MoveT >* snd_algo = &algo2;
@@ -30,25 +30,28 @@ void game( std::vector< MoveT >& moves, Algo< MoveT >& algo1, Algo< MoveT >& alg
     if (player == player2)
         std::swap( algo, snd_algo );
 
+    OutStream cout_stream = { std::cout, "\e[1m", "\e[0m", "\n", " " };
+
+    size_t acc_nodes = 0;
     while (true)
     {
-        std::unique_ptr< BuildTree< MoveT > > builder;
-        if (print_tree)
-            builder = std::make_unique< BuildTree< MoveT > >( player );
-
-        std::pair< double, std::optional< size_t > > result;
+        minimax.eval = algo->eval;
+        minimax.reorder = algo->reorder;
 
         // calc next move
-        result = negamax(
-            moves, node, algo->depth, player2_won, player1_won, player,
-            algo->eval, algo->reorder, builder.get());
+        const double value = minimax( algo->depth, player );
+
+        if (gv)
+            PrintTree< MoveT > print_tree( *gv, minimax.vertices, minimax.rule, player );
 
         if (trace)
-            std::cout << node.count << " accumulated nodes build" << std::endl;
+            std::cout << minimax.count - acc_nodes << " recursions" << std::endl;
 
-        if (!result.second)
+        acc_nodes = minimax.count;
+
+        if (minimax.moves.empty())
         {
-            const Player winner = node.rule.get_winner();
+            const Player winner = minimax.rule.get_winner();
             if (winner == player1)
             {
                 ++algo1.stat.wins;
@@ -71,62 +74,55 @@ void game( std::vector< MoveT >& moves, Algo< MoveT >& algo1, Algo< MoveT >& alg
                     std::cout << "draw" << std::endl;
                 else
                     std::cout << winner << " won" << std::endl;
+
+                std::cout
+                    << acc_nodes << " accumulated recursions" << std::endl
+                    << minimax.max_moves << " maximal move stack length" << std::endl;
             }
+
             break;
         }
         else
         {
-            if (trace && print_tree)
-            {
-                (*print_tree)( *(builder->root_));
-
-                // print candidates
-                TreeNode< MoveT > const& root = *(builder->root_);
-                std::cout << "candidates (" << root.children_.size()
-                        << ")" << std::endl;
-                for (auto itr = root.children_.begin();
-                    itr != root.children_.end(); ++itr)
-                {
-                    TreeNode< MoveT > const& child = **itr;
-                    assert (child.move_);
-                    if (child.move_ == root.best_move_)
-                        std::cout << "\e[1m";
-                    node.rule.print_move( *child.move_ );
-                    std::cout << " (" << child.value_ << ")";
-                    if (child.move_ == root.best_move_)
-                        std::cout << "\e[0m";
-                    std::cout << ", ";
-                }
-                std::cout << std::endl;
-            }
-
             // apply move
-            node.rule.apply_move( *result.second, player);
+            assert (!minimax.moves.empty());
+            minimax.rule.apply_move( minimax.moves.front(), player);
 
             if (trace)
             {
-                node.rule.print_board();
-                std::cout << std::endl;
+                std::cout << "candidates (" << minimax.moves.size() << ") : ";
+                for (MoveT const& move : minimax.moves)
+                {
+                    const bool is_best = move == minimax.moves.front();
+                    if (is_best)
+                        std::cout << "\e[1m";
+                    minimax.rule.print_move( std::cout, move );
+                    if (is_best)
+                        std::cout << "\e[0m";
+                    std::cout << ", ";
+                }
+                std::cout << "value = " << value << std::endl;
+                minimax.rule.print_board( cout_stream, minimax.moves.front());
+                std::cout << std::endl << std::endl;
             }
+
+            player = Player( -player );
+            std::swap( algo, snd_algo );
         }
-
-        player = Player( -player );
-
-        std::swap( algo, snd_algo );
     }
 }
 
 template< typename MoveT >
-void arena( Algo< MoveT >& algo1, Algo< MoveT >& algo2, Player player,
-            Node< MoveT >& node, size_t rounds, bool alternate )
+void arena( Minimax< MoveT >& minimax, Algo< MoveT >& algo1, Algo< MoveT >& algo2,
+            Player player, size_t rounds, bool alternate )
 {
-    std::vector< MoveT > moves;
     for (size_t idx = 0; idx != rounds; ++idx)
     {
         std::cout << '.' << std::flush;
-        node.reset();
 
-        game( moves, algo1, algo2, player, node, false, (PrintTree< MoveT >*) nullptr );
+        game( minimax, algo1, algo2, player, true );
+        minimax.moves.clear();
+        minimax.rule.reset();
         if (alternate)
             player = Player( -player );
     }
@@ -135,7 +131,7 @@ void arena( Algo< MoveT >& algo1, Algo< MoveT >& algo2, Player player,
          << "rounds: " << rounds << std::endl
          << "player1:\n" << std::make_pair( algo1.stat, rounds ) << std::endl
          << "player2:\n" << std::make_pair( algo2.stat, rounds ) << std::endl
-         << "avg node count (for both) = " << double( node.count ) / rounds << std::endl;
+         << "avg node count (for both) = " << double( minimax.count ) / rounds << std::endl;
 }
 
 std::ostream& operator<<( std::ostream&, std::pair< Statistic, size_t > const& );
