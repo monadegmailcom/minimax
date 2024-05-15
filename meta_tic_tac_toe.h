@@ -15,6 +15,7 @@ struct Rule : public GenericRule< Move >
     Rule();
     void reset();
     void snapshot();
+    void restore_snapshot();
     void print_move( std::ostream&, Move const& ) const;
     void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;
@@ -28,7 +29,10 @@ struct Rule : public GenericRule< Move >
     Player* const meta_board;
     std::array< Player, board_size > board_snapshot;
     std::vector< Move > move_stack;
-    std::array< bool, n * n > terminals;
+    size_t move_stack_size_snapshot;
+
+    std::array< bool, item_size > terminals;
+    std::array< bool, item_size > terminals_snapshot;
 };
 
 void user_input(

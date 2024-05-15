@@ -13,6 +13,7 @@ struct Rule : public GenericRule< Move >
     Rule(Player*);
     void reset();
     void snapshot();
+    void restore_snapshot();
     void print_move( std::ostream&, Move const& ) const;
     void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;

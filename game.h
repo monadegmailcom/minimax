@@ -39,7 +39,7 @@ void game( Minimax< MoveT >& minimax, Algo< MoveT >& algo1, Algo< MoveT >& algo2
         minimax.reorder = algo->reorder;
 
         // calc next move
-        const double value = minimax( algo->depth, player );
+        const double value = player * minimax( algo->depth, player );
 
         if (gv)
             PrintTree< MoveT > print_tree( *gv, minimax.vertices, minimax.rule, player );
@@ -114,24 +114,19 @@ void game( Minimax< MoveT >& minimax, Algo< MoveT >& algo1, Algo< MoveT >& algo2
 
 template< typename MoveT >
 void arena( Minimax< MoveT >& minimax, Algo< MoveT >& algo1, Algo< MoveT >& algo2,
-            Player player, size_t rounds, bool alternate )
+            Player player, size_t rounds, bool alternate, bool dots = true )
 {
     for (size_t idx = 0; idx != rounds; ++idx)
     {
-        std::cout << '.' << std::flush;
+        if (dots)
+            std::cout << '.' << std::flush;
 
-        game( minimax, algo1, algo2, player, true );
+        game( minimax, algo1, algo2, player, false );
         minimax.moves.clear();
         minimax.rule.reset();
         if (alternate)
             player = Player( -player );
     }
-    std::cout
-         << std::endl
-         << "rounds: " << rounds << std::endl
-         << "player1:\n" << std::make_pair( algo1.stat, rounds ) << std::endl
-         << "player2:\n" << std::make_pair( algo2.stat, rounds ) << std::endl
-         << "avg node count (for both) = " << double( minimax.count ) / rounds << std::endl;
 }
 
 std::ostream& operator<<( std::ostream&, std::pair< Statistic, size_t > const& );

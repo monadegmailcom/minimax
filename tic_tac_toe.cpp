@@ -11,6 +11,11 @@ Rule::Rule( Player* board ) : board( board ), board_snapshot { not_set } {}
 
 void Rule::reset()
 {
+    fill_n( board, n * n, not_set );
+}
+
+void Rule::restore_snapshot()
+{
     copy_n( board_snapshot.begin(), n * n, board );
 }
 

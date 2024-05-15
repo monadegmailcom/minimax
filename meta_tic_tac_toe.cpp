@@ -10,20 +10,30 @@ Rule::Rule()
     : board {not_set},
       meta_board( board.data() + n * n * item_size ),
       board_snapshot { not_set },
-      terminals { false }
+      move_stack_size_snapshot( 0 ),
+      terminals { false },
+      terminals_snapshot { false }
 {}
 
 void Rule::reset()
 {
-    copy_n( board_snapshot.begin(), n * n, board.begin());
-    for (size_t idx = 0; idx != n; ++idx)
-        update( idx );
+    fill( board.begin(), board.end(), not_set );
+    fill( terminals.begin(), terminals.end(), false );
     move_stack.clear();
 }
 
 void Rule::snapshot()
 {
-    copy_n( board.begin(), n * n, board_snapshot.begin());
+    board_snapshot = board;
+    terminals_snapshot = terminals;
+    move_stack_size_snapshot = move_stack.size();
+}
+
+void Rule::restore_snapshot()
+{
+    board = board_snapshot;
+    terminals = terminals_snapshot;
+    move_stack.resize( move_stack_size_snapshot );
 }
 
 void Rule::update( size_t idx )

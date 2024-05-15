@@ -32,6 +32,7 @@ struct GenericRule
 {
     virtual void reset() = 0;
     virtual void snapshot() = 0;
+    virtual void restore_snapshot() = 0;
     virtual void print_move( std::ostream&, MoveT const& ) const = 0;
     virtual void print_board( OutStream&, std::optional< MoveT > const& last_move ) const = 0;
     virtual Player get_winner() const = 0;
@@ -40,7 +41,7 @@ struct GenericRule
     virtual void undo_move(MoveT const& move, Player) = 0;
 };
 
-using Eval = std::function< double () >;
+using Eval = std::function< double (Player) >;
 
 template< typename MoveT >
 using ReOrder = std::function< void (
@@ -77,7 +78,7 @@ struct ReorderByScore
         for (auto itr = begin; itr != end; ++itr)
         {
             rule.apply_move( *itr, player );
-            scores.push_back( std::make_pair( eval(), *itr ));
+            scores.push_back( std::make_pair( eval( player ), *itr ));
             rule.undo_move( *itr, player );
         }
 
@@ -149,7 +150,7 @@ struct Minimax
 
         // if max depth reached, we are done and return with a score
         if (!depth)
-            return player * eval();
+            return player * eval( player );
 
         double value = player2_won;
         size_t best_move = prev_size;

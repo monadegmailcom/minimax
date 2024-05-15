@@ -1,7 +1,7 @@
 CC=g++
-FLAGS=-std=c++17 -g -I. -c # debug
-#FLAGS=-std=c++17 -O3 -NDEBUG -I. -c # release
-DEPS=game.h minimax.h player.h tree.h
+#FLAGS=-std=c++17 -g -I. -c # debug
+FLAGS=-std=c++17 -O3 -DNDEBUG -I. -c # release
+DEPS=game.h minimax.h player.h tree.h montecarlo.h
 OBJS=player.o main.o tic_tac_toe.o meta_tic_tac_toe.o game.o tree.o
 minimax: $(HEADER) $(OBJS)
 	$(CC) -o minimax $(OBJS)
