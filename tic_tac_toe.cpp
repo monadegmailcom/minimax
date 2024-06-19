@@ -24,9 +24,9 @@ void Rule::snapshot()
     copy_n( board, n * n, board_snapshot.begin());
 }
 
-void Rule::print_move( ostream& stream, size_t const& move ) const
+void Rule::print_move( ostream& stream, Move const& move ) const
 {
-    stream << move;
+    stream << size_t( move );
 }
 
 void Rule::print_board( OutStream& out_stream, optional< Move > const& last_move ) const
@@ -91,11 +91,13 @@ Player Rule::get_winner() const
     return not_set;
 }
 
-void Rule::generate_moves(vector< Move >& moves ) const
+vector< Move >& Rule::generate_moves()
 {
+    moves.clear();
     for (size_t idx = 0; idx != n * n; ++idx)
         if (board[idx] == not_set)
             moves.push_back( idx );
+    return moves;
 }
 
 void Rule::apply_move( Move const& move, Player player)
@@ -124,8 +126,8 @@ namespace trivial_estimate {
 namespace simple_estimate {
     double row_player_score( Rule const& rule, const size_t i )
     {
-        size_t count1 = 0;
-        size_t count2 = 0;
+        u_int32_t count1 = 0;
+        u_int32_t count2 = 0;
 
         for (size_t j = 0; j != n; ++j)
         {
@@ -145,8 +147,8 @@ namespace simple_estimate {
 
     double col_player_score( Rule const& rule, const size_t j )
     {
-        size_t count1 = 0;
-        size_t count2 = 0;
+        u_int32_t count1 = 0;
+        u_int32_t count2 = 0;
 
         for (size_t i = 0; i != n; ++i)
         {
@@ -166,8 +168,8 @@ namespace simple_estimate {
 
     double diag1_player_score( Rule const& rule )
     {
-        size_t count1 = 0;
-        size_t count2 = 0;
+        u_int32_t count1 = 0;
+        u_int32_t count2 = 0;
 
         for (size_t k = 0; k != n; ++k)
         {
@@ -187,8 +189,8 @@ namespace simple_estimate {
 
     double diag2_player_score( Rule const& rule )
     {
-        size_t count1 = 0;
-        size_t count2 = 0;
+        u_int32_t count1 = 0;
+        u_int32_t count2 = 0;
 
         for (size_t k = 0; k != n; ++k)
         {
@@ -220,8 +222,8 @@ namespace simple_estimate {
 } // namespace simple_estimate {
 
 void user_input( Rule& rule,
-                 vector< size_t >::iterator begin,
-                 vector< size_t >::iterator end )
+                 vector< Move >::iterator begin,
+                 vector< Move >::iterator end )
 {
     if (begin == end)
         return;

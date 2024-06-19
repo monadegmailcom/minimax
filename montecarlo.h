@@ -1,4 +1,4 @@
-#include "minimax.h"
+#include "rule.h"
 
 namespace montecarlo {
 template< typename MoveT >

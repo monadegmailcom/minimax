@@ -1,6 +1,7 @@
 #include "meta_tic_tac_toe.h"
 
 #include <cstdlib>
+#include <cassert>
 
 using namespace std;
 
@@ -53,11 +54,11 @@ void Rule::update( size_t idx )
     terminals[idx] = is_terminal;
 }
 
-void Rule::print_move( ostream& stream, size_t const& move ) const
+void Rule::print_move( ostream& stream, Move const& move ) const
 {
-    const ldiv_t p = ldiv( move, item_size);
-    const ldiv_t outer_ij = ldiv( p.quot, n );
-    const ldiv_t inner_ij = ldiv( p.rem, tic_tac_toe::n);
+    const div_t p = div( move, item_size);
+    const div_t outer_ij = div( p.quot, n );
+    const div_t inner_ij = div( p.rem, tic_tac_toe::n);
     stream
          << "(" << outer_ij.quot + 1 << "/" << outer_ij.rem + 1
          << ", " << inner_ij.quot + 1 << "/" << inner_ij.rem + 1
@@ -88,7 +89,7 @@ void Rule::print_board( OutStream& out_stream, optional< Move > const& last_move
                 else
                     for (size_t j2 = 0; j2 != tic_tac_toe::n; ++j2)
                     {
-                        const size_t move = idx * item_size + i2 * tic_tac_toe::n + j2;
+                        const Move move = idx * item_size + i2 * tic_tac_toe::n + j2;
                         const bool is_last =
                             !move_stack.empty() && move_stack.back() == move;
                         if (is_last)
@@ -113,23 +114,24 @@ Player Rule::get_winner() const
     return tic_tac_toe::Rule( meta_board ).get_winner();
 }
 
-void Rule::generate_moves( vector< Move >& moves) const
+vector< Move >& Rule::generate_moves()
 {
+    moves.clear();
     // if last move is available, the inner board is fixed
     if (!move_stack.empty())
     {
-        const size_t last_move = move_stack.back();
-        const ldiv_t p = ldiv( last_move, item_size);
+        const Move last_move = move_stack.back();
+        const div_t p = div( last_move, item_size);
 
         // if selected inner board is not won already
         if (!terminals[p.rem])
         {
             const size_t begin = p.rem * item_size;
             const size_t end = begin + item_size;
-            for (size_t move = begin; move != end; ++move)
+            for (Move move = begin; move != end; ++move)
                 if (board[move] == not_set)
                     moves.push_back( move );
-            return;
+            return moves;
         }
     }
 
@@ -138,10 +140,11 @@ void Rule::generate_moves( vector< Move >& moves) const
         {
             const size_t begin = idx * item_size;
             const size_t end = begin + item_size;
-            for (size_t move = begin; move != end; ++move)
+            for (Move move = begin; move != end; ++move)
                 if (board[move] == not_set)
                     moves.push_back( move );
         }
+    return moves;
 }
 
 void Rule::apply_move( Move const& move, Player player)
@@ -160,17 +163,17 @@ void Rule::undo_move( Move const& move, Player)
 }
 
 void user_input( Rule& rule,
-                 vector< size_t >::iterator begin,
-                 vector< size_t >::iterator end )
+                 vector< Move >::iterator begin,
+                 vector< Move >::iterator end )
 {
     if (begin == end)
         return;
 
-    vector< size_t >::iterator itr;
+    vector< Move >::iterator itr;
     while (true)
     {
-        size_t outer_row, outer_col, inner_row, inner_col, move;
-
+        size_t outer_row, outer_col, inner_row, inner_col;
+        Move move;
         cout << "outer board" << endl;
         cout << "row (1-" << n << ")? ";
         cin >> outer_row;

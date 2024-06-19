@@ -4,7 +4,7 @@
 
 namespace meta_tic_tac_toe {
 
-typedef size_t Move;
+typedef u_int8_t Move;
 
 constexpr size_t n = 3;
 constexpr size_t item_size = tic_tac_toe::n * tic_tac_toe::n;
@@ -19,7 +19,7 @@ struct Rule : public GenericRule< Move >
     void print_move( std::ostream&, Move const& ) const;
     void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;
-    void generate_moves( std::vector< Move >& ) const;
+    std::vector< Move >& generate_moves();
     void apply_move( Move const& move, Player player);
     void undo_move( Move const& move, Player);
 
@@ -37,8 +37,8 @@ struct Rule : public GenericRule< Move >
 
 void user_input(
     Rule& rule,
-    std::vector< size_t >::iterator begin,
-    std::vector< size_t >::iterator end );
+    std::vector< Move >::iterator begin,
+    std::vector< Move >::iterator end );
 
 namespace simple_estimate {
 double eval( Rule& rule, double factor );

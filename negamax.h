@@ -5,43 +5,7 @@
 #include <algorithm>
 #include <optional>
 
-#include "player.h"
-
-template< typename MoveT >
-struct Vertex
-{
-    Vertex( std::optional< MoveT > const& move )
-        : move( move ), value( 0.0 ), child_count( 0 ) {}
-    std::optional< MoveT > move;
-    double value;
-    size_t child_count;
-    std::optional< MoveT > best_move;
-};
-
-struct OutStream
-{
-    std::ostream& stream;
-    std::string emph_start;
-    std::string emph_end;
-    std::string linebreak;
-    std::string space;
-};
-
-template< typename MoveT >
-struct GenericRule
-{
-    virtual void reset() = 0;
-    virtual void snapshot() = 0;
-    virtual void restore_snapshot() = 0;
-    virtual void print_move( std::ostream&, MoveT const& ) const = 0;
-    virtual void print_board( OutStream&, std::optional< MoveT > const& last_move ) const = 0;
-    virtual Player get_winner() const = 0;
-    virtual void generate_moves( std::vector< MoveT >& ) const = 0;
-    virtual void apply_move(MoveT const& move, Player player) = 0;
-    virtual void undo_move(MoveT const& move, Player) = 0;
-};
-
-using Eval = std::function< double (Player) >;
+#include "rule.h"
 
 template< typename MoveT >
 using ReOrder = std::function< void (
@@ -54,7 +18,8 @@ struct Shuffle
 {
     Shuffle() : g_(rd_()) {}
 
-    void operator()( typename std::vector< MoveT >::iterator begin,
+    void operator()( Player player,
+                     typename std::vector< MoveT >::iterator begin,
                      typename std::vector< MoveT >::iterator end)
     {
         std::shuffle( begin, end, g_ );
@@ -67,13 +32,13 @@ struct Shuffle
 template< typename MoveT >
 struct ReorderByScore
 {
-    ReorderByScore( GenericRule< MoveT >& rule, Eval eval )
+    ReorderByScore( GenericRule< MoveT >& rule, std::function< double (Player) > eval )
         : rule( rule ), eval( eval ) {}
 
     void operator()( Player player, typename std::vector< MoveT >::iterator begin,
                      typename std::vector< MoveT >::iterator end )
     {
-        shuffle( begin, end );
+        shuffle( player, begin, end );
         scores.clear();
         for (auto itr = begin; itr != end; ++itr)
         {
@@ -96,33 +61,27 @@ struct ReorderByScore
     }
 
     GenericRule< MoveT >& rule;
-    Eval eval;
+    std::function< double (Player) > eval;
     Shuffle< MoveT > shuffle;
     std::vector< std::pair< double, MoveT > > scores;
 };
 
 template< typename MoveT >
-struct Minimax
+struct Negamax
 {
-    Minimax( GenericRule< MoveT >& rule, bool trace ) : rule( rule ), trace( trace )
-    {}
+    Negamax( GenericRule< MoveT >& rule ) : rule( rule ) {}
 
     GenericRule< MoveT >& rule;
-    bool trace;
-    Eval eval;
+    std::function< double (Player) > eval;
     ReOrder< MoveT > reorder;
     std::vector< MoveT > moves;
-    std::vector< Vertex< MoveT > > vertices;
 
-    static size_t count;
-    static size_t max_moves;
+    size_t count = 0;
+    size_t max_moves = 0;
 
     double operator()( size_t depth, Player player )
     {
         moves.clear();
-        vertices.clear();
-
-        vertices.push_back( Vertex< MoveT >( std::optional< MoveT >()));
 
         return rec( depth, player2_won, player1_won, player );
     }
@@ -138,41 +97,32 @@ struct Minimax
 
         // save previous count of moves
         const size_t prev_size = moves.size();
-        rule.generate_moves( moves );
+        {
+            auto& tmp = rule.generate_moves();
+            moves.insert( moves.end(), tmp.begin(), tmp.end());
+        }
         const size_t new_size = moves.size();
 
         // if no moves generated, we are done
         if (prev_size == new_size)
             return 0.0;
 
-        // apply reordering of generated moves
-        reorder( player, moves.begin() + prev_size, moves.end());
-
         // if max depth reached, we are done and return with a score
         if (!depth)
             return player * eval( player );
 
+        // apply reordering of generated moves
+        reorder( player, moves.begin() + prev_size, moves.end());
+
         double value = player2_won;
         size_t best_move = prev_size;
         size_t idx = prev_size;
-        const size_t prev_vertex_idx = vertices.size() - 1;
-        size_t vertex_count = 0;
         for (; idx != new_size; ++idx)
         {
             rule.apply_move( moves[idx], player );
 
-            const size_t vertex_idx = vertices.size();
-            if (trace)
-            {
-                ++vertex_count;
-                vertices.push_back( Vertex< MoveT >( moves[idx] ));
-            }
-
             const double new_value =
                 -rec( depth - 1, -beta, -alpha, Player( -player ));
-
-            if (trace)
-                vertices[vertex_idx].value = player * new_value;
 
             rule.undo_move( moves[idx], player );
 
@@ -193,18 +143,8 @@ struct Minimax
                 break;
         }
 
-        if (trace)
-        {
-            Vertex< MoveT >& vertex = vertices[prev_vertex_idx];
-            vertex.child_count = vertex_count;
-            vertex.best_move = moves[best_move];
-        }
-
         iter_swap( moves.begin() + prev_size, moves.begin() + best_move );
 
         return value;
     }
 };
-
-template< typename MoveT > size_t Minimax< MoveT >::count = 0;
-template< typename MoveT > size_t Minimax< MoveT >::max_moves = 0;

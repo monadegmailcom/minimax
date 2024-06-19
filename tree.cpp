@@ -10,5 +10,5 @@ void print_preamble( ostream& stream )
 
 void print_closing( ostream& stream )
 {
-    stream << "}\n\n";
+    stream << "}\n\n" << flush;
 }
