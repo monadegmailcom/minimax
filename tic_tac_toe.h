@@ -11,9 +11,7 @@ constexpr u_int8_t n = 3;
 struct Rule : public GenericRule< Move >
 {
     Rule(Player*);
-    void reset();
-    void snapshot();
-    void restore_snapshot();
+    GenericRule< Move >* clone() const;
     void print_move( std::ostream&, Move const& ) const;
     void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;
@@ -22,7 +20,6 @@ struct Rule : public GenericRule< Move >
     void undo_move( Move const& move, Player);
 
     Player* const board;
-    std::array< Player, n * n > board_snapshot;
 };
 
 namespace trivial_estimate {

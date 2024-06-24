@@ -7,21 +7,11 @@ using namespace std;
 
 namespace tic_tac_toe {
 
-Rule::Rule( Player* board ) : board( board ), board_snapshot { not_set } {}
+Rule::Rule( Player* board ) : board( board ) {}
 
-void Rule::reset()
+GenericRule< Move >* Rule::clone() const
 {
-    fill_n( board, n * n, not_set );
-}
-
-void Rule::restore_snapshot()
-{
-    copy_n( board_snapshot.begin(), n * n, board );
-}
-
-void Rule::snapshot()
-{
-    copy_n( board, n * n, board_snapshot.begin());
+    return new Rule( *this );
 }
 
 void Rule::print_move( ostream& stream, Move const& move ) const

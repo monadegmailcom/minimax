@@ -106,16 +106,17 @@ struct PrintTree
 };
 
 template< typename MoveT >
-void tree_lens( GenericRule< MoveT >& rule, Node< MoveT > const& root, Player player )
+void tree_lens( GenericRule< MoveT >& initial_rule, Node< MoveT > const& root, Player player )
 {
     size_t depth = 2;
-    DisplayNode display_node = Board;
+    DisplayNode display_node = Stats;
 
     std::vector< Node< MoveT > const* > path;
     path.push_back( &root );
     Node< MoveT > const* node =
         root.children.empty() ? nullptr : &root.children.front();
-    rule.snapshot();
+
+    std::unique_ptr< GenericRule< MoveT > > rule( initial_rule.clone());
 
     const std::string filename = "lens.gv";
     while (true)
@@ -123,7 +124,7 @@ void tree_lens( GenericRule< MoveT >& rule, Node< MoveT > const& root, Player pl
         {
             std::ofstream gv( filename );
             PrintTree< MoveT > print_tree(
-                gv, *path.back(), rule, player,
+                gv, *path.back(), *rule, player,
                 display_node, node, depth );
         }
 
@@ -150,7 +151,7 @@ void tree_lens( GenericRule< MoveT >& rule, Node< MoveT > const& root, Player pl
             {
                 node = path.back();
                 path.pop_back();
-                rule.undo_move( node->vertex.move, player );
+                rule->undo_move( node->vertex.move, player );
                 player = Player( -player );
             }
         }
@@ -159,7 +160,7 @@ void tree_lens( GenericRule< MoveT >& rule, Node< MoveT > const& root, Player pl
             if (!node->children.empty())
             {
                 path.push_back( node );
-                rule.apply_move( node->vertex.move, player );
+                rule->apply_move( node->vertex.move, player );
                 node = &node->children.front();
                 player = Player( -player );
             }
@@ -185,6 +186,4 @@ void tree_lens( GenericRule< MoveT >& rule, Node< MoveT > const& root, Player pl
                 node = &*(--itr);
         }
     }
-
-    rule.restore_snapshot();
 }

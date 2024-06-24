@@ -10,31 +10,15 @@ namespace meta_tic_tac_toe {
 Rule::Rule()
     : board {not_set},
       meta_board( board.data() + n * n * item_size ),
-      board_snapshot { not_set },
-      move_stack_size_snapshot( 0 ),
-      terminals { false },
-      terminals_snapshot { false }
+      terminals { false }
 {}
 
-void Rule::reset()
+GenericRule< Move >* Rule::clone() const
 {
-    fill( board.begin(), board.end(), not_set );
-    fill( terminals.begin(), terminals.end(), false );
-    move_stack.clear();
-}
-
-void Rule::snapshot()
-{
-    board_snapshot = board;
-    terminals_snapshot = terminals;
-    move_stack_size_snapshot = move_stack.size();
-}
-
-void Rule::restore_snapshot()
-{
-    board = board_snapshot;
-    terminals = terminals_snapshot;
-    move_stack.resize( move_stack_size_snapshot );
+    Rule* result = new Rule( *this );
+    result->meta_board = result->board.data() + n * n * item_size;
+    result->move_stack.reserve( move_stack.size());
+    return result;
 }
 
 void Rule::update( size_t idx )

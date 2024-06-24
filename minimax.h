@@ -31,67 +31,110 @@ struct Vertex
 };
 
 template< typename MoveT >
+struct Minimax;
+
+enum RecState { Continue, SoftStop, HardStop };
+
+template< typename MoveT >
+struct Recursion
+{
+    virtual RecState operator()( Minimax< MoveT > const& ) = 0;
+};
+
+template< typename MoveT >
 struct Minimax
 {
-    Minimax( GenericRule< MoveT >& rule,
-             std::function< double (Player) > eval,
-             std::function< bool (Minimax< MoveT > const&) > add_vertex_allowed )
-    : rule( rule ), eval( eval ), add_vertex_allowed( add_vertex_allowed )
+    Minimax( std::function< double (GenericRule< MoveT >&, Player) > eval,
+             Recursion< MoveT >& recursion )
+    : eval( eval ), recursion( recursion )
     {}
 
     Minimax( Minimax const& ) = delete;
     Minimax& operator=( Minimax const& ) = delete;
 
-    GenericRule< MoveT >& rule;
-    std::function< double (Player) > eval;
-    std::function< bool (Minimax< MoveT > const&) > add_vertex_allowed;
+    GenericRule< MoveT >* rule = nullptr;
+    std::function< double (GenericRule< MoveT >&, Player) > eval;
+    Recursion< MoveT >& recursion;
 
     Vertex< MoveT > root = MoveT();
     size_t rec_count = 0;
     size_t vertex_count = 0;
     size_t depth = 0;
-    size_t max_depth = 0;
     std::random_device rd;
     std::mt19937 g { rd() };
+    std::function< void (Minimax*) > debug;
 
-    void rec( double alpha, double beta, Player player, Vertex< MoveT >& vertex )
+    static bool prune1( double& alpha, double& beta, double& value,
+                        Vertex< MoveT >& vertex )
+    {
+        if (vertex.value > value)
+            value = vertex.value;
+        if (value > alpha)
+            alpha = value;
+        // prune soft-fail
+        return (value >= beta);
+    }
+
+    static bool pred1( Vertex< MoveT > const& lhs, Vertex< MoveT > const& rhs)
+    {
+        return lhs.value > rhs.value;
+    }
+
+    static bool prune2( double& alpha, double& beta, double& value,
+                        Vertex< MoveT >& vertex )
+    {
+        if (vertex.value < value)
+            value = vertex.value;
+        if (value < beta)
+            beta = value;
+        // prune soft-fail
+        return (value <= alpha);
+    }
+
+    static bool pred2( Vertex< MoveT > const& lhs, Vertex< MoveT > const& rhs)
+    {
+        return lhs.value < rhs.value;
+    }
+
+    // return true if hard stop
+    bool rec( double alpha, double beta, Player player, Vertex< MoveT >& vertex )
     {
         ++rec_count;
 
-        if (max_depth < depth)
-            max_depth = depth;
-
         // if we know, it's terminal, we are done
         if (vertex.is_terminal)
-            return;
+            return false;
 
         // if no children generated yet (or no available)
         if (vertex.children.empty())
         {
-            const Player winner = rule.get_winner();
+            const Player winner = rule->get_winner();
             if (winner != not_set)
             {
                 vertex.value = winner * player1_won;
                 vertex.is_terminal = true; // if winner, it's terminal
-                return;
+                return false;
             }
 
-            auto& moves = rule.generate_moves();
+            auto& moves = rule->generate_moves();
 
             if (moves.empty())
             {
                 // no winner, no moves: it's a draw and terminal
                 vertex.value = 0.0;
                 vertex.is_terminal = true;
-                return;
+                return false;
             }
 
             // if we have to stop adding vertices, return heuristic
-            if (!add_vertex_allowed(*this))
+            const RecState rec_state = recursion(*this);
+            if (rec_state == SoftStop)
             {
-                vertex.value = eval( player );
-                return;
+                vertex.value = eval( *rule, player );
+                return false;
             }
+            else if (rec_state == HardStop)
+                return true;
 
             // mix in some randomness
             std::shuffle( moves.begin(), moves.end(), g );
@@ -101,65 +144,53 @@ struct Minimax
             vertex_count += moves.size();
         }
 
+        double value;
+        bool (*prune)( double&, double&, double&, Vertex< MoveT >& );
+        bool (*pred)(Vertex< MoveT > const&, Vertex< MoveT > const& );
+
         if (player == player1)
         {
-            double value = player2_won;
-            for (auto itr = vertex.children.begin();
-                 itr != vertex.children.end(); ++itr)
-            {
-                ++depth;
-                rule.apply_move( itr->move, player1 );
-                rec( alpha, beta, player2, *itr);
-                rule.undo_move( itr->move, player1 );
-                --depth;
-
-                if (itr->value > value)
-                    value = itr->value;
-                if (value > alpha)
-                    alpha = value;
-                // prune soft-fail
-                if (value >= beta)
-                    break;
-            }
-            vertex.value = value;
-
-            // sort descending
-            vertex.children.sort(
-                [](Vertex< MoveT > const& lhs, Vertex< MoveT > const& rhs)
-                { return lhs.value > rhs.value; });
+            prune = &Minimax< MoveT >::prune1;
+            pred = &Minimax< MoveT >::pred1;
+            value = player2_won;
         }
-        else // player2
+        else
         {
-            double value = player1_won;
-            for (auto itr = vertex.children.begin();
-                 itr != vertex.children.end(); ++itr)
-            {
-                ++depth;
-                rule.apply_move( itr->move, player2 );
-                rec( alpha, beta, player1, *itr);
-                rule.undo_move( itr->move, player2 );
-                --depth;
-
-                if (itr->value < value)
-                    value = itr->value;
-                if (value < beta)
-                    beta = value;
-                // prune soft-fail
-                if (value <= alpha)
-                   break;
-            }
-            vertex.value = value;
-
-            // sort ascending
-            vertex.children.sort(
-                [](Vertex< MoveT > const& lhs, Vertex< MoveT > const& rhs)
-                { return lhs.value < rhs.value; });
+            prune = &Minimax< MoveT >::prune2;
+            pred = &Minimax< MoveT >::pred2;
+            value = player1_won;
         }
+
+        bool is_terminal = true;
+
+        for (auto itr = vertex.children.begin();
+             itr != vertex.children.end(); ++itr)
+        {
+            ++depth;
+            rule->apply_move( itr->move, player );
+            const bool hard_stop = rec( alpha, beta, Player( -player ), *itr);
+            rule->undo_move( itr->move, player1 );
+            --depth;
+
+            if (hard_stop)
+                return true;
+
+            is_terminal &= itr->is_terminal;
+
+            if (prune( alpha, beta, value, *itr ))
+                break;
+        }
+
+        vertex.value = value;
+        vertex.is_terminal = is_terminal;
+        vertex.children.sort( pred );
+
+        return false;
     }
 
     void apply_move( MoveT const& move, Player player )
     {
-        rule.apply_move( move, player );
+        rule->apply_move( move, player );
         auto itr = find_if( root.children.begin(), root.children.end(),
             [&move]( Vertex< MoveT > const& vertex) { return vertex.move == move; });
         if (itr != root.children.end())
@@ -176,38 +207,39 @@ struct Minimax
         do
         {
             depth = 1;
-            max_depth = 1;
             rec( player2_won, player1_won, player, root );
             depth = 0;
+            //debug( this );
+
             /*debug
             for (auto& v : root.children)
                 std::cout << int( v.move ) << ": " << v.value << ", ";
             std::cout << std::endl;*/
-        } while (add_vertex_allowed( *this ));
+        } while (recursion( *this ) == Continue);
 
         return root.value;
     }
 };
 
 template< typename MoveT >
-struct MaxDepth
+struct MaxDepth : public Recursion< MoveT >
 {
     MaxDepth( size_t max_depth) : max_depth( max_depth ) {}
 
-    bool operator()( Minimax< MoveT > const& minimax )
+    RecState operator()( Minimax< MoveT > const& minimax )
     {
         if (minimax.depth == 0)
         {
             if (depth < max_depth)
             {
                 ++depth;
-                return true;
+                return Continue;
             }
             depth = 1;
-            return false;
+            return SoftStop;
         }
 
-        return minimax.depth < depth;
+        return minimax.depth < depth ? Continue : SoftStop;
     }
 
     const size_t max_depth;
@@ -215,29 +247,36 @@ struct MaxDepth
 };
 
 template< typename MoveT >
-struct MaxVertices
+struct MaxVertices : public Recursion< MoveT >
 {
     MaxVertices( size_t max_vertices ) : max_vertices( max_vertices ) {}
 
-    bool operator()( Minimax< MoveT > const& minimax )
+    RecState operator()( Minimax< MoveT > const& minimax )
     {
         const bool allowed = minimax.vertex_count < max_vertices;
 
         if (minimax.depth == 0)
         {
-            if (allowed && depth > minimax.max_depth)
+            if (!allowed || minimax.root.is_terminal)
             {
-                depth = 1;
-                return false;
+                --depth;
+                return SoftStop;
             }
 
-            if (allowed)
-                depth += 2;
-            else
-                depth = 1;
+            ++depth;
+
+            // debug
+            //std::cout << "depth = " << depth << std::endl;
+
+            return Continue;
         }
 
-        return allowed && minimax.depth <= depth;
+        if (!allowed)
+            return HardStop;
+        else if (minimax.depth > depth)
+            return SoftStop;
+        else
+            return Continue;
     }
 
     const size_t max_vertices;

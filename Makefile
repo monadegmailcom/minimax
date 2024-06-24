@@ -1,7 +1,7 @@
 CC=g++
 # CC=g++-11
-#FLAGS=-std=c++17 -g -I. -c # debug
-FLAGS=-std=c++17 -O3 -DNDEBUG -I. -c # release
+#FLAGS=-std=c++17 -Wall -g -I. -c # debug
+FLAGS=-std=c++17 -Wall -O3 -DNDEBUG -I. -c # release
 RULE_DEP=rule.h player.h
 NEGAMAX_DEP=negamax.h $(RULE_DEP)
 MINIMAX_DEP=minimax.h $(RULE_DEP)

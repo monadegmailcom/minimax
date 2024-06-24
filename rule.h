@@ -18,9 +18,8 @@ struct OutStream
 template< typename MoveT >
 struct GenericRule
 {
-    virtual void reset() = 0;
-    virtual void snapshot() = 0;
-    virtual void restore_snapshot() = 0;
+    virtual ~GenericRule() {}
+    virtual GenericRule* clone() const = 0;
     virtual void print_move( std::ostream&, MoveT const& ) const = 0;
     virtual void print_board( OutStream&, std::optional< MoveT > const& last_move ) const = 0;
     virtual Player get_winner() const = 0;

@@ -9,6 +9,7 @@
 
 template< typename MoveT >
 using ReOrder = std::function< void (
+    GenericRule< MoveT >& rule,
     Player,
     typename std::vector< MoveT >::iterator begin,
     typename std::vector< MoveT >::iterator end) >;
@@ -18,7 +19,7 @@ struct Shuffle
 {
     Shuffle() : g_(rd_()) {}
 
-    void operator()( Player player,
+    void operator()( GenericRule< MoveT >&, Player,
                      typename std::vector< MoveT >::iterator begin,
                      typename std::vector< MoveT >::iterator end)
     {
@@ -32,18 +33,19 @@ struct Shuffle
 template< typename MoveT >
 struct ReorderByScore
 {
-    ReorderByScore( GenericRule< MoveT >& rule, std::function< double (Player) > eval )
-        : rule( rule ), eval( eval ) {}
+    ReorderByScore( std::function< double (GenericRule< MoveT >&, Player) > eval )
+        : eval( eval ) {}
 
-    void operator()( Player player, typename std::vector< MoveT >::iterator begin,
+    void operator()( GenericRule< MoveT >& rule, Player player,
+                     typename std::vector< MoveT >::iterator begin,
                      typename std::vector< MoveT >::iterator end )
     {
-        shuffle( player, begin, end );
+        shuffle( rule, player, begin, end );
         scores.clear();
         for (auto itr = begin; itr != end; ++itr)
         {
             rule.apply_move( *itr, player );
-            scores.push_back( std::make_pair( eval( player ), *itr ));
+            scores.push_back( std::make_pair( eval( rule, player ), *itr ));
             rule.undo_move( *itr, player );
         }
 
@@ -60,8 +62,7 @@ struct ReorderByScore
             *itr = itr2->second;
     }
 
-    GenericRule< MoveT >& rule;
-    std::function< double (Player) > eval;
+    std::function< double (GenericRule< MoveT >&, Player) > eval;
     Shuffle< MoveT > shuffle;
     std::vector< std::pair< double, MoveT > > scores;
 };
@@ -69,10 +70,11 @@ struct ReorderByScore
 template< typename MoveT >
 struct Negamax
 {
-    Negamax( GenericRule< MoveT >& rule ) : rule( rule ) {}
+    Negamax( std::function< double (GenericRule< MoveT >&, Player) > eval,
+             ReOrder< MoveT > reorder ) : eval( eval ), reorder( reorder ) {}
 
-    GenericRule< MoveT >& rule;
-    std::function< double (Player) > eval;
+    GenericRule< MoveT >* rule = nullptr;
+    std::function< double (GenericRule< MoveT >&, Player) > eval;
     ReOrder< MoveT > reorder;
     std::vector< MoveT > moves;
 
@@ -91,14 +93,14 @@ struct Negamax
         ++count;
 
         // if we have a winner, we are done
-        const Player winner = rule.get_winner();
+        const Player winner = rule->get_winner();
         if (winner != not_set)
             return player * winner * player1_won;
 
         // save previous count of moves
         const size_t prev_size = moves.size();
         {
-            auto& tmp = rule.generate_moves();
+            auto& tmp = rule->generate_moves();
             moves.insert( moves.end(), tmp.begin(), tmp.end());
         }
         const size_t new_size = moves.size();
@@ -109,22 +111,22 @@ struct Negamax
 
         // if max depth reached, we are done and return with a score
         if (!depth)
-            return player * eval( player );
+            return player * eval( *rule, player );
 
         // apply reordering of generated moves
-        reorder( player, moves.begin() + prev_size, moves.end());
+        reorder( *rule, player, moves.begin() + prev_size, moves.end());
 
         double value = player2_won;
         size_t best_move = prev_size;
         size_t idx = prev_size;
         for (; idx != new_size; ++idx)
         {
-            rule.apply_move( moves[idx], player );
+            rule->apply_move( moves[idx], player );
 
             const double new_value =
                 -rec( depth - 1, -beta, -alpha, Player( -player ));
 
-            rule.undo_move( moves[idx], player );
+            rule->undo_move( moves[idx], player );
 
             if (moves.size() > max_moves)
                 max_moves = moves.size();
