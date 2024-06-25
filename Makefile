@@ -1,7 +1,8 @@
 CC=g++
 # CC=g++-11
-#FLAGS=-std=c++17 -Wall -g -I. -c # debug
-FLAGS=-std=c++17 -Wall -O3 -DNDEBUG -I. -c # release
+INCLUDE=/usr/local/Cellar/boost/1.85.0/include/
+#FLAGS=-std=c++17 -Wall -g -I$(INCLUDE) -c # debug
+FLAGS=-std=c++17 -Wall -O3 -DNDEBUG -I$(INCLUDE) -c # release
 RULE_DEP=rule.h player.h
 NEGAMAX_DEP=negamax.h $(RULE_DEP)
 MINIMAX_DEP=minimax.h $(RULE_DEP)
@@ -11,6 +12,7 @@ TIC_TAC_TOE_DEP=tic_tac_toe.h $(RULE_DEP)
 META_TIC_TAC_TOE_DEP=meta_tic_tac_toe.h $(TIC_TAC_TOE_DEP)
 MONTECARLO_DEP=montecarlo.h $(RULE_DEP)
 OBJS=player.o main.o tic_tac_toe.o meta_tic_tac_toe.o game.o tree.o
+
 minimax: $(OBJS)
 	$(CC) -o minimax $(OBJS)
 clean:

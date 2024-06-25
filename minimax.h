@@ -4,6 +4,17 @@
 #include <array>
 #include <list>
 #include <cmath>
+#include <boost/pool/pool_alloc.hpp>
+
+template< typename MoveT >
+struct Vertex;
+
+template< typename MoveT >
+using VertexList = std::list<
+    Vertex< MoveT >,
+    boost::fast_pool_allocator< Vertex< MoveT >,
+    boost::default_user_allocator_new_delete,
+    boost::details::pool::null_mutex > >;
 
 template< typename MoveT >
 struct Vertex
@@ -18,14 +29,15 @@ struct Vertex
         is_terminal = vertex.is_terminal;
 
         // no copies or assignments by moving
-        std::list< Vertex< MoveT > > temp_list( std::move( vertex.children ));
+        VertexList< MoveT > temp_list( std::move( vertex.children ));
         assert (vertex.children.empty()); // vertex has no more children now
         swap( children, temp_list );
 
         return *this;
     };
+
     double value = 0.0;
-    std::list< Vertex > children;
+    VertexList< MoveT > children;
     MoveT move;
     bool is_terminal = false;
 };
@@ -286,7 +298,7 @@ struct MaxVertices : public Recursion< MoveT >
 template< typename MoveT >
 struct ChooseFirst
 {
-    MoveT const& operator()(std::list< Vertex< MoveT > > const& children)
+    MoveT const& operator()(VertexList< MoveT > const& children)
     {
         return children.front().move;
     }
@@ -297,7 +309,7 @@ struct ChooseMove
 {
     ChooseMove( double epsilon ) : epsilon( epsilon ) {}
 
-    MoveT const& operator()(std::list< Vertex< MoveT > > const& children)
+    MoveT const& operator()(VertexList< MoveT > const& children)
     {
         const double v = children.front().value ? *children.front().value : 0.0;
         moves.clear();

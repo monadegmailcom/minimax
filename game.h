@@ -30,7 +30,7 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
     MinimaxAlgorithm( Player player,
                       std::function< double (GenericRule< MoveT >&, Player) > eval,
                       Recursion< MoveT >& recursion,
-                      std::function< MoveT const& (std::list< Vertex< MoveT > > const&) > choose_move,
+                      std::function< MoveT const& (VertexList< MoveT > const&) > choose_move,
                       bool trace )
     : player( player ), minimax( eval, recursion ),
       choose_move( choose_move ), trace( trace )
@@ -88,7 +88,7 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
 
     const Player player;
     Minimax< MoveT > minimax;
-    std::function< MoveT const& (std::list< Vertex< MoveT > > const&) > choose_move;
+    std::function< MoveT const& (VertexList< MoveT > const&) > choose_move;
     const bool trace;
     OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
 };
@@ -146,9 +146,10 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
 
 
 template< typename MoveT >
-Player game( GenericRule< MoveT >& initial_rule,
-             Algorithm< MoveT >& algo1, Algorithm< MoveT >& algo2,
-             Player player)
+std::pair< Player, std::unique_ptr< GenericRule< MoveT > > >
+     game( GenericRule< MoveT >& initial_rule,
+        Algorithm< MoveT >& algo1, Algorithm< MoveT >& algo2,
+        Player player)
 {
     std::unique_ptr< GenericRule< MoveT > > rule( initial_rule.clone());
     std::unique_ptr< GenericRule< MoveT > > rule1( initial_rule.clone());
@@ -174,15 +175,16 @@ Player game( GenericRule< MoveT >& initial_rule,
     OutStream cout_stream = { std::cout, "\e[1m", "\e[0m", "\n", " " };
 
     std::vector< MoveT > moves;
+    Player winner;
     while (true)
     {
-        const Player winner = rule->get_winner();
+        winner = rule->get_winner();
         if (winner != not_set)
-            return winner;
+            break;
 
         auto& moves = rule->generate_moves();
         if (moves.empty())
-            return not_set; // draw
+            break; // draw
 
         auto begin = std::chrono::steady_clock::now();
         MoveT move = algo->get_move();
@@ -191,7 +193,9 @@ Player game( GenericRule< MoveT >& initial_rule,
 
         if(!any_of( moves.begin(), moves.end(), [&move](auto& m) {return m == move;} ))
         {
-            std::cout << "error: " << int( move ) << " is not a valid move" << std::endl;
+            std::cout << "error: " << int( move ) << " is not a valid move by " << player
+                      << std::endl;
+            winner = not_set;
             break;
         }
 
@@ -206,7 +210,7 @@ Player game( GenericRule< MoveT >& initial_rule,
         std::swap( algo, snd_algo );
     }
 
-    return not_set;
+    return { winner, std::move( rule ) };
 }
 
 template< typename MoveT >
@@ -222,7 +226,7 @@ void arena( GenericRule< MoveT >& initial_rule, Algorithm< MoveT >& algo1,
     {
         std::cout << '.' << std::flush;
 
-        const Player winner = game( initial_rule, algo1, algo2, player );
+        const Player winner = game( initial_rule, algo1, algo2, player ).first;
         if (winner == player1)
             ++player1_wins;
         else if (winner == player2)

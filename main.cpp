@@ -26,18 +26,20 @@ void run_meta_tic_tac_toe()
     MaxDepth< Move > max_depth( 7 );
 
     ChooseFirst< Move > choose;
-    function< Move const& (std::list< Vertex< Move > > const&) > choose_move =
+    function< Move const& (VertexList< Move > const&) > choose_move =
         bind( &ChooseFirst< Move >::operator(), &choose, _1 );
 
     NegamaxAlgorithm< Move > algo1( player1, 5, reorder, eval, false );
     MinimaxAlgorithm< Move > algo2( player2, eval,
-        max_vertices, choose_move, false );
+        max_depth, choose_move, false );
 
     Rule rule;
 
     arena( rule, algo1, algo2, 100, true );
     return;
-    const Player winner = game( rule, algo1, algo2, player1 );
+    const pair< Player, unique_ptr< GenericRule< Move > > > p = game( rule, algo1, algo2, player1 );
+    const Player winner = p.first;
+    Rule* res_rule = dynamic_cast< Rule* >( p.second.get());
 //    ofstream file( "tree.gv" );
 //    PrintTree pt( file, algo1.minimax.vertices, rule1, player2 );
 
@@ -49,20 +51,8 @@ void run_meta_tic_tac_toe()
          << algo2.duration.count() / 1000000.0 << endl;
     OutStream out_stream {cout, "\e[1m", "\e[0m", "\n", " " };
     cout << "resulting board" << endl;
-    //tic_tac_toe::Rule( dynamic_cast< Rule* >( algo2.minimax.rule )->meta_board ).print_board( out_stream, optional< size_t >());
-
-/*
-    MinimaxAlgorithm< Move > algo1( player1, rule1, 3, reorder1, eval1, false );
-    MinimaxAlgorithm< Move > algo2( player2, rule2, 6, reorder2, eval2, false );
-
-    arena( game_rule, algo1, algo2, player2, 10, true, true );
-    cout << "player " << player1 << " time (sec) = "
-         << algo1.duration.count() / 1000000.0 << endl
-         << "player " << player2 << " time (sec) = "
-         << algo2.duration.count() / 1000000.0 << endl;
-*/
+    tic_tac_toe::Rule( res_rule->meta_board ).print_board( out_stream, optional< size_t >());
 }
-
 
 int main()
 {
