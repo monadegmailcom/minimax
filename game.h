@@ -19,10 +19,93 @@ struct Algorithm
 {
     virtual MoveT get_move() = 0;
     virtual void opponent_move( MoveT const& ) = 0;
-    virtual void reset(GenericRule< MoveT >* rule) = 0;
+    virtual void reset() = 0;
+
+    void initialize( GenericRule< MoveT > const& initial_rule )
+    {
+        rule.reset( initial_rule.clone());
+        reset();
+    }
 
     std::chrono::microseconds duration {0};
+    std::unique_ptr< GenericRule< MoveT > > rule;
 };
+
+namespace montecarlo {
+
+template< typename MoveT >
+struct ChooseMove
+{
+    virtual Node< MoveT > const& operator()( NodeList< MoveT > const& nodes ) const = 0;
+};
+
+template< typename MoveT >
+struct ChooseBest : public ChooseMove< MoveT >
+{
+    Node< MoveT > const& operator()(NodeList< MoveT > const& nodes) const
+    {
+        assert (!nodes.empty());
+        return *max_element( nodes.begin(), nodes.end(),
+            [](auto& lhs, auto& rhs) { return lhs.denominator < rhs.denominator; });
+    }
+};
+
+template< typename MoveT >
+struct Algorithm : public ::Algorithm< MoveT >
+{
+    Algorithm( Player player, ChooseMove< MoveT >& choose_move, size_t simulations,
+               double exploration, bool trace ) :
+        player( player ), choose_move( choose_move ), simulations( simulations ),
+        mcts( exploration ), trace( trace ) {}
+
+    MoveT get_move()
+    {
+/*        mcts.debug = [this]( MCTS< MoveT >* mcts )
+        {
+            tree::lens< MoveT >( *mcts->rule, *mcts, player );
+        };
+*/
+        mcts( simulations, player );
+        Node< MoveT > const& node = choose_move( mcts.root.children);
+
+        if (trace)
+        {
+            std::cout << "player = " << player << std::endl
+                      << "move   = " << int( node.move ) << std::endl
+                      << "value  = " << node.denominator << std::endl << std::endl;
+            montecarlo::tree::lens( *mcts.rule, mcts, player );
+        }
+
+        mcts.apply_move( node.move, player );
+
+        if (trace)
+        {
+            mcts.rule->print_board( out_stream, node.move );
+            std::cout << std::endl << std::endl;
+        }
+
+        return node.move;
+    }
+
+    void opponent_move( MoveT const& move )
+    {
+        mcts.apply_move( move, Player( -player ));
+    }
+
+    void reset()
+    {
+        mcts.init( this->rule.get());
+    }
+
+    Player player;
+    ChooseMove< MoveT >& choose_move;
+    size_t simulations;
+    MCTS< MoveT > mcts;
+    const bool trace;
+    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
+};
+
+} // namespace montecarlo {
 
 template< typename MoveT >
 struct MinimaxAlgorithm : public Algorithm< MoveT >
@@ -58,7 +141,7 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
                       << "vertex count = " << minimax.vertex_count << std::endl
                       << "move = " << int( move ) << std::endl
                       << "value = " << value << std::endl << std::endl;
-            //tree_lens( *minimax.rule, Node< MoveT >( minimax.root ), player );
+            tree_lens( *minimax.rule, Node< MoveT >( minimax.root ), player );
             //std::ofstream gv( "tree.gv", std::ios::app );
             //PrintTree< MoveT > print_tree(
             //    gv, Node< MoveT >( minimax.root ), minimax.rule, player );
@@ -80,9 +163,9 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
         minimax.apply_move( move, Player( -player ));
     }
 
-    void reset( GenericRule< MoveT >* rule)
+    void reset()
     {
-        minimax.rule = rule;
+        minimax.rule = this->rule.get();
         minimax.root = Vertex< MoveT >( MoveT());
     }
 
@@ -99,9 +182,7 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
     NegamaxAlgorithm( Player player, size_t depth,
         ReOrder< MoveT > reorder, std::function< double (GenericRule< MoveT >&, Player) > eval,
         bool trace )
-    : player( player ), negamax( eval, reorder ), depth( depth ), trace( trace )
-    {
-    }
+    : player( player ), negamax( eval, reorder ), depth( depth ), trace( trace ) {}
 
     MoveT get_move()
     {
@@ -130,9 +211,9 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
         negamax.rule->apply_move( move, Player( -player ));
     }
 
-    void reset(GenericRule< MoveT >* rule)
+    void reset()
     {
-        negamax.rule = rule;
+        negamax.rule = this->rule.get();
         negamax.moves.clear();
     }
 
@@ -147,15 +228,13 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
 
 template< typename MoveT >
 std::pair< Player, std::unique_ptr< GenericRule< MoveT > > >
-     game( GenericRule< MoveT >& initial_rule,
+     game( GenericRule< MoveT > const& initial_rule,
         Algorithm< MoveT >& algo1, Algorithm< MoveT >& algo2,
         Player player)
 {
     std::unique_ptr< GenericRule< MoveT > > rule( initial_rule.clone());
-    std::unique_ptr< GenericRule< MoveT > > rule1( initial_rule.clone());
-    std::unique_ptr< GenericRule< MoveT > > rule2( initial_rule.clone());
-    algo1.reset( rule1.get());
-    algo2.reset( rule2.get());
+    algo1.initialize( initial_rule );
+    algo2.initialize( initial_rule );
 
     Algorithm< MoveT >* algo = nullptr;
     Algorithm< MoveT >* snd_algo = nullptr;
@@ -182,7 +261,8 @@ std::pair< Player, std::unique_ptr< GenericRule< MoveT > > >
         if (winner != not_set)
             break;
 
-        auto& moves = rule->generate_moves();
+        // make a copy!
+        moves = rule->generate_moves();
         if (moves.empty())
             break; // draw
 

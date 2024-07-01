@@ -7,11 +7,15 @@ using namespace std;
 
 namespace tic_tac_toe {
 
+std::vector< Move > Rule::moves;
+
 Rule::Rule( Player* board ) : board( board ) {}
 
-GenericRule< Move >* Rule::clone() const
+GenericRule< Move >* Rule::clone( vector< unsigned char >* buf ) const
 {
-    return new Rule( *this );
+    return buf
+        ? new (buf->data()) Rule( *this )
+        : new Rule( *this );
 }
 
 void Rule::print_move( ostream& stream, Move const& move ) const
@@ -232,6 +236,16 @@ void user_input( Rule& rule,
     auto itr = find( begin, end, idx );
     assert (itr != end);
     iter_swap( begin, itr );
+}
+
+GenericRule< Move >* DeepRule::clone( vector< unsigned char >* buf ) const
+{
+    DeepRule* result = buf
+        ? new (buf->data()) DeepRule( *this )
+        : new DeepRule( *this );
+
+    result->board = result->mem.data();
+    return result;
 }
 
 } // namespace tic_tac_toe {

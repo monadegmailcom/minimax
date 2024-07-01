@@ -245,9 +245,15 @@ struct MaxDepth : public Recursion< MoveT >
             if (depth < max_depth)
             {
                 ++depth;
+                // debug
+                //std::cout << "depth = " << depth << std::endl;
+
                 return Continue;
             }
-            depth = 1;
+            if (depth > 2)
+                depth -= 2;
+            else
+                depth = 1;
             return SoftStop;
         }
 
@@ -271,7 +277,10 @@ struct MaxVertices : public Recursion< MoveT >
         {
             if (!allowed || minimax.root.is_terminal)
             {
-                --depth;
+                if (depth > 2)
+                    depth -= 2;
+                else
+                    depth = 1;
                 return SoftStop;
             }
 

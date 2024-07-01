@@ -13,11 +13,13 @@ Rule::Rule()
       terminals { false }
 {}
 
-GenericRule< Move >* Rule::clone() const
+GenericRule< Move >* Rule::clone( vector< unsigned char >* buf ) const
 {
-    Rule* result = new Rule( *this );
+    Rule* result = buf
+        ? new (buf->data()) Rule( *this )
+        : new Rule( *this );
+
     result->meta_board = result->board.data() + n * n * item_size;
-    result->move_stack.reserve( move_stack.size());
     return result;
 }
 

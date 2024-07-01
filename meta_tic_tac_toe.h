@@ -13,7 +13,8 @@ constexpr size_t board_size = (n * n + 1) * item_size;
 struct Rule : public GenericRule< Move >
 {
     Rule();
-    GenericRule< Move >* clone() const;
+    GenericRule< Move >* clone( std::vector< unsigned char >* = nullptr ) const;
+    size_t size_of() const { return sizeof( Rule ); }
     void print_move( std::ostream&, Move const& ) const;
     void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;
@@ -27,6 +28,7 @@ struct Rule : public GenericRule< Move >
     Player* meta_board;
     std::vector< Move > move_stack;
     std::array< bool, item_size > terminals;
+    std::vector< Move > moves;
 };
 
 void user_input(
