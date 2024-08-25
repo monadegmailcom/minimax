@@ -56,15 +56,15 @@ struct Recursion
 template< typename MoveT >
 struct Minimax
 {
-    Minimax( std::function< double (GenericRule< MoveT >&, Player) > eval,
+    Minimax( GenericRule< MoveT > const& initial_rule, std::function< double (GenericRule< MoveT >&, Player) > eval,
              Recursion< MoveT >& recursion )
-    : eval( eval ), recursion( recursion )
+    : rule( initial_rule.clone()), eval( eval ), recursion( recursion )
     {}
 
     Minimax( Minimax const& ) = delete;
     Minimax& operator=( Minimax const& ) = delete;
 
-    GenericRule< MoveT >* rule = nullptr;
+    std::unique_ptr< GenericRule< MoveT > > rule;
     std::function< double (GenericRule< MoveT >&, Player) > eval;
     Recursion< MoveT >& recursion;
 

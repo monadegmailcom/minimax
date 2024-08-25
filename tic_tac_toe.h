@@ -12,8 +12,8 @@ struct Rule : public GenericRule< Move >
 {
     Rule(Player*);
     virtual ~Rule() {}
-    GenericRule< Move >* clone( std::vector< unsigned char >* = nullptr ) const;
-    size_t size_of() const { return sizeof( Rule ); }
+    virtual GenericRule< Move >* clone() const;
+    virtual void copy_from( GenericRule< Move > const& );
     void print_move( std::ostream&, Move const& ) const;
     void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;
@@ -28,8 +28,8 @@ struct Rule : public GenericRule< Move >
 struct DeepRule : public Rule
 {
     DeepRule() : Rule( nullptr ), mem{ not_set } { board = mem.data(); }
-    GenericRule< Move >* clone( std::vector< unsigned char >* = nullptr ) const;
-    size_t size_of() const { return sizeof( DeepRule ); }
+    GenericRule< Move >* clone() const;
+    void copy_from( GenericRule< Move > const& );
     std::array< Player, n * n > mem;
 };
 
@@ -40,9 +40,5 @@ double eval( Rule const& rule );
 namespace simple_estimate {
 double eval( Rule const& rule );
 } // namespace simple_estimate {
-
-void user_input( Rule& rule,
-    std::vector< Move >::iterator begin,
-    std::vector< Move >::iterator end );
 
 } // namespace tic_tac_toe {

@@ -24,17 +24,11 @@ struct Node
 {
     Node( MoveT const& move ) : move( move ) {}
     Node( Node const& ) = delete;
-    Node& operator=( Node const& ) = delete;
-    Node& operator=( MoveT const& m)
-    {
-        move = m;
-        numerator = 0.0;
-        denominator = 0.0;
-        is_terminal.reset();
-        children.clear();
-        return *this;
-    }
+    /*Node( Node const& node ) : move( node.move ), numerator( node.numerator ),
+        denominator( node.denominator ), is_terminal( node.is_terminal ), children( node.children )
+    {}*/
 
+    Node& operator=( Node const& ) = delete;
     Node& operator=( Node&& node )
     {
         move = node.move;
@@ -60,7 +54,8 @@ struct Node
 template< typename MoveT >
 struct MCTS
 {
-    MCTS( double exploration ) : exploration( exploration ), gen( rd())
+    MCTS( GenericRule< MoveT > const& initial_rule, double exploration )
+    : rule( initial_rule.clone()), playout_rule( initial_rule.clone()), exploration( exploration ), gen( rd())
     {}
 
     Node< MoveT >& select( Node< MoveT >& node )
@@ -80,64 +75,70 @@ struct MCTS
     }
 
     static double cbt(
-        Node< MoveT > const& child, Node< MoveT > const& node,
-        double exploration )
+        Node< MoveT > const& child, Node< MoveT > const& node, double exploration )
     {
         return !child.denominator
             ? INFINITY
             : 1 - child.numerator / child.denominator
-                + exploration * sqrt( log2( node.denominator ) / child.denominator);
+                + exploration * sqrt( log( node.denominator ) / child.denominator);
     }
 
-    Player playout( Node< MoveT >& node, Player player)
+    Player playout( std::vector< MoveT >& moves, Player player)
     {
-        assert (node.children.empty());
-
-        std::unique_ptr< GenericRule< MoveT >, NoDelete< MoveT > >
-            local_rule( rule->clone( &rule_buf ));
+        assert( !moves.empty());
+        
+        playout_rule->copy_from( *rule );
 
         Player winner;
-        bool first = true;
         while (true)
         {
-            winner = local_rule->get_winner();
-            if (winner != not_set) // win
-                break;
-
-            auto& moves = local_rule->generate_moves();
-            if (moves.empty()) // draw
-                break;
-
-            // expansion
-            if (first)
-                for (MoveT const& move : moves)
-                    node.children.emplace_back( move );
-
             // apply new random move
             auto idx = std::uniform_int_distribution<std::mt19937::result_type>(
                 0, moves.size() - 1)( rd );
-            local_rule->apply_move( moves[idx], player );
+            playout_rule->apply_move( moves[idx], player );
+            winner = playout_rule->get_winner();
+
+            if (winner != not_set) // win?
+                break;
+
+            // generate_moves updates the static moves container
+            playout_rule->generate_moves();
+            if (moves.empty()) // draw?
+                break;
 
             player = Player( -player );
-            first = false;
         }
 
-        if (first)
-            node.is_terminal = winner;
-
-        // debug
-        //std::cout << "winner = " << winner << std::endl;
         return winner;
     }
 
     Player simulate( Node< MoveT >& node, Player player )
     {
-        if (node.is_terminal)
-            return *node.is_terminal;
-
         Player winner;
-        if (node.children.empty())
-            winner = playout( node, player );
+        if (node.is_terminal)
+            winner = *node.is_terminal;
+        else if (node.children.empty())
+        {
+            winner = rule->get_winner();
+            if (winner != not_set) // winner?
+                node.is_terminal = winner;
+            else 
+            {
+                auto& moves = rule->generate_moves();
+                if (moves.empty()) // draw?
+                    node.is_terminal = not_set;
+                else
+                {
+                    // expansion
+                    for (MoveT const& move : moves)
+                        node.children.emplace_back( move );
+            
+                    winner = playout( moves, player );
+                    // debug
+                    //std::cout << "winner of move " << int( node.move ) << " = " << winner << std::endl;
+                }
+            }
+        }
         else
         {
             Node< MoveT >& child = select( node );
@@ -148,6 +149,7 @@ struct MCTS
 
         // back propagation
         ++node.denominator;
+
         if (winner == player)
             node.numerator += 1.0;
         else if (winner == not_set)
@@ -160,8 +162,8 @@ struct MCTS
     {
         for(; simulations && !root.is_terminal; --simulations)
         {
-            //debug( this );
             simulate( root, player );
+            //debug( this );
         }
     }
 
@@ -176,21 +178,19 @@ struct MCTS
             root = move;
     }
 
-    void init(GenericRule< MoveT >* r)
+    void init(GenericRule< MoveT > const& r)
     {
-        rule = r;
-        rule_buf.resize( rule->size_of());
-        root = { MoveT() };
+        rule->copy_from( r );
+        root = Node< MoveT >( MoveT()); // { MoveT() }; // todo
     }
 
-    GenericRule< MoveT >* rule = nullptr;
+    std::unique_ptr< GenericRule< MoveT > > rule;
+    std::unique_ptr< GenericRule< MoveT > > playout_rule;
     double exploration;
     Node< MoveT > root = { MoveT() };
     std::vector< std::pair< double, Node< MoveT >* > > values;
-    std::vector< unsigned char > rule_buf;
     std::random_device rd;
     std::mt19937 gen;
-    std::function< void (MCTS*) > debug;
 };
 
 } // namespace montecarlo {

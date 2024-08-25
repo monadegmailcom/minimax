@@ -11,11 +11,16 @@ std::vector< Move > Rule::moves;
 
 Rule::Rule( Player* board ) : board( board ) {}
 
-GenericRule< Move >* Rule::clone( vector< unsigned char >* buf ) const
+GenericRule< Move >* Rule::clone() const
 {
-    return buf
-        ? new (buf->data()) Rule( *this )
-        : new Rule( *this );
+    return new Rule( *this );
+}
+
+void Rule::copy_from( GenericRule< Move > const& generic_rule )
+{
+    Rule const* rule = dynamic_cast< Rule const* >( &generic_rule );
+    if (rule)
+        board = rule->board;
 }
 
 void Rule::print_move( ostream& stream, Move const& move ) const
@@ -215,37 +220,16 @@ namespace simple_estimate {
 
 } // namespace simple_estimate {
 
-void user_input( Rule& rule,
-                 vector< Move >::iterator begin,
-                 vector< Move >::iterator end )
+GenericRule< Move >* DeepRule::clone() const
 {
-    if (begin == end)
-        return;
-
-    Player* board = rule.board;
-    size_t row, col, idx;
-    do
-    {
-        cout << "row (1-" << n << ")? ";
-        cin >> row;
-        cout << "col (1-" << n << ")? ";
-        cin >> col;
-        idx = (row - 1) * n + col - 1;
-    } while (row == 0 || col == 0 || row > n || col > n || board[idx] != not_set);
-
-    auto itr = find( begin, end, idx );
-    assert (itr != end);
-    iter_swap( begin, itr );
+    return new Rule( *this );
 }
 
-GenericRule< Move >* DeepRule::clone( vector< unsigned char >* buf ) const
+void DeepRule::copy_from( GenericRule< Move > const& generic_rule )
 {
-    DeepRule* result = buf
-        ? new (buf->data()) DeepRule( *this )
-        : new DeepRule( *this );
-
-    result->board = result->mem.data();
-    return result;
+    DeepRule const* rule = dynamic_cast< DeepRule const* >( &generic_rule );
+    if (rule)
+        mem = rule->mem;
 }
 
 } // namespace tic_tac_toe {

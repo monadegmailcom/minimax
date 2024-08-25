@@ -113,7 +113,8 @@ struct PrintTree
 };
 
 template< typename MoveT >
-void tree_lens( GenericRule< MoveT >& initial_rule, Node< MoveT > const& root, Player player )
+void tree_lens( GenericRule< MoveT > const& initial_rule, 
+                Node< MoveT > const& root, Player player )
 {
     size_t depth = 2;
     DisplayNode display_node = Stats;
@@ -308,9 +309,10 @@ struct PrintTree
 };
 
 template< typename MoveT >
-void lens( GenericRule< MoveT >& initial_rule, montecarlo::MCTS< MoveT >& mcts, Player player )
+void lens( GenericRule< MoveT >& initial_rule, montecarlo::Node< MoveT > const& mnode,
+           double exploration, Player player )
 {
-    Node< MoveT > root( mcts.root );
+    Node< MoveT > root( mnode );
 
     size_t depth = 2;
     DisplayNode display_node = Stats;
@@ -328,7 +330,7 @@ void lens( GenericRule< MoveT >& initial_rule, montecarlo::MCTS< MoveT >& mcts, 
         {
             std::ofstream gv( filename );
             PrintTree< MoveT > print_tree(
-                gv, *path.back(), mcts.exploration, *rule, player,
+                gv, *path.back(), exploration, *rule, player,
                 tree_type, display_node, node, depth );
         }
 

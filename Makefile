@@ -1,8 +1,13 @@
 CC=g++
 # CC=g++-11
-INCLUDE=/usr/local/Cellar/boost/1.85.0/include/
-FLAGS=-std=c++17 -Wall -g -I$(INCLUDE) -c # debug
-#FLAGS=-std=c++17 -Wall -O3 -DNDEBUG -I$(INCLUDE) -c # release
+BOOST=/opt/homebrew/Cellar
+INCLUDE=$(BOOST)/boost/1.85.0/include/
+DEBUG=-g
+RELEASE=-O3 -DNDEBUG
+# don't forget to clean if you change OPT
+#OPT=$(DEBUG)
+OPT=$(RELEASE)
+FLAGS=-std=c++17 -Wall $(OPT) -I$(INCLUDE) -c
 RULE_DEP=rule.h player.h
 NEGAMAX_DEP=negamax.h $(RULE_DEP)
 MINIMAX_DEP=minimax.h $(RULE_DEP)

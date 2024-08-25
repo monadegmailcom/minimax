@@ -7,20 +7,30 @@ using namespace std;
 
 namespace meta_tic_tac_toe {
 
+std::vector< Move > Rule::moves;
+
 Rule::Rule()
     : board {not_set},
       meta_board( board.data() + n * n * item_size ),
       terminals { false }
 {}
 
-GenericRule< Move >* Rule::clone( vector< unsigned char >* buf ) const
+GenericRule< Move >* Rule::clone() const
 {
-    Rule* result = buf
-        ? new (buf->data()) Rule( *this )
-        : new Rule( *this );
-
-    result->meta_board = result->board.data() + n * n * item_size;
+    auto result = new Rule();
+    result->copy_from( *this );
     return result;
+}
+
+void Rule::copy_from( GenericRule< Move > const& generic_rule )
+{
+    Rule const* rule = dynamic_cast< Rule const* >( &generic_rule );
+    if (rule)
+    {
+        board = rule->board;
+        move_stack = rule->move_stack;
+        terminals = rule->terminals;
+    }
 }
 
 void Rule::update( size_t idx )
@@ -43,12 +53,15 @@ void Rule::update( size_t idx )
 void Rule::print_move( ostream& stream, Move const& move ) const
 {
     const div_t p = div( move, item_size);
+    stream << p.quot << "/" << p.rem;
+    /*
     const div_t outer_ij = div( p.quot, n );
     const div_t inner_ij = div( p.rem, tic_tac_toe::n);
     stream
          << "(" << outer_ij.quot + 1 << "/" << outer_ij.rem + 1
          << ", " << inner_ij.quot + 1 << "/" << inner_ij.rem + 1
          << ")" << flush;
+         */
 }
 
 void Rule::print_board( OutStream& out_stream, optional< Move > const& last_move ) const
@@ -146,66 +159,6 @@ void Rule::undo_move( Move const& move, Player)
     update( move / item_size );
     assert (!move_stack.empty());
     move_stack.pop_back();
-}
-
-void user_input( Rule& rule,
-                 vector< Move >::iterator begin,
-                 vector< Move >::iterator end )
-{
-    if (begin == end)
-        return;
-
-    vector< Move >::iterator itr;
-    while (true)
-    {
-        size_t outer_row, outer_col, inner_row, inner_col;
-        Move move;
-        cout << "outer board" << endl;
-        cout << "row (1-" << n << ")? ";
-        cin >> outer_row;
-        if (outer_row <= 0 || outer_row > n)
-        {
-            cout << "invalid input" << endl;
-            continue;
-        }
-        cout << "col (1-" << n << ")? ";
-        cin >> outer_col;
-        if (outer_col <= 0 || outer_col > n)
-        {
-            cout << "invalid input" << endl;
-            continue;
-        }
-
-        cout << "inner board" << endl;
-        cout << "row (1-" << tic_tac_toe::n << ")? ";
-        cin >> inner_row;
-        if (inner_row <= 0 || inner_row > tic_tac_toe::n)
-        {
-            cout << "invalid input" << endl;
-            continue;
-        }
-        cout << "col (1-" << tic_tac_toe::n << ")? ";
-
-        cin >> inner_col;
-        if (inner_col <= 0 || inner_col > tic_tac_toe::n)
-        {
-            cout << "invalid input" << endl;
-            continue;
-        }
-        move = ((outer_row - 1) * n + outer_col - 1) * item_size
-               + (inner_row - 1) * tic_tac_toe::n + inner_col - 1;
-        itr = find( begin, end, move );
-        if (itr == end)
-        {
-            cout << "move not possible, available moves are: ";
-            for (auto itr = begin; itr != end; ++itr)
-                rule.print_move( std::cout, *itr );
-            cout << endl;
-            continue;
-        }
-        break;
-    }
-    iter_swap( begin, itr );
 }
 
 namespace simple_estimate {

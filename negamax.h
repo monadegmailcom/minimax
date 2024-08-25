@@ -1,11 +1,10 @@
 #pragma once
 
-#include <functional>
+#include "rule.h"
+
 #include <random>
 #include <algorithm>
 #include <optional>
-
-#include "rule.h"
 
 template< typename MoveT >
 using ReOrder = std::function< void (
@@ -70,10 +69,11 @@ struct ReorderByScore
 template< typename MoveT >
 struct Negamax
 {
-    Negamax( std::function< double (GenericRule< MoveT >&, Player) > eval,
-             ReOrder< MoveT > reorder ) : eval( eval ), reorder( reorder ) {}
+    Negamax( GenericRule< MoveT > const& initial_rule, std::function< double (GenericRule< MoveT >&, Player) > eval,
+             ReOrder< MoveT > reorder ) 
+    : rule( initial_rule.clone()), eval( eval ), reorder( reorder ) {}
 
-    GenericRule< MoveT >* rule = nullptr;
+    std::unique_ptr< GenericRule< MoveT > > rule;
     std::function< double (GenericRule< MoveT >&, Player) > eval;
     ReOrder< MoveT > reorder;
     std::vector< MoveT > moves;
