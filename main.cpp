@@ -1,5 +1,6 @@
 #include "meta_tic_tac_toe.h"
 #include "game.h"
+#include "raylib_interface.h"
 
 #include <fstream>
 #include <vector>
@@ -137,9 +138,14 @@ void monte()
     rule.print_board( out_stream, optional< size_t >());
 }
 
+void show_gui();
+
 int main()
 {
-    run_meta_tic_tac_toe();
+    show_gui();
+    //start_console_interface();
+    return 0;
+    //run_meta_tic_tac_toe();
     //monte();
 
     return 0;

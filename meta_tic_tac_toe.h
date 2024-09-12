@@ -18,7 +18,7 @@ struct Rule : public GenericRule< Move >
     void print_move( std::ostream&, Move const& ) const;
     void print_board( OutStream&, std::optional< Move > const& last_move ) const;
     Player get_winner() const;
-    std::vector< Move >& generate_moves();
+    std::vector< Move >& generate_moves() const;
     void apply_move( Move const& move, Player);
     void undo_move( Move const& move, Player);
 

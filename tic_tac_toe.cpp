@@ -90,7 +90,7 @@ Player Rule::get_winner() const
     return not_set;
 }
 
-vector< Move >& Rule::generate_moves()
+vector< Move >& Rule::generate_moves() const
 {
     moves.clear();
     for (size_t idx = 0; idx != n * n; ++idx)

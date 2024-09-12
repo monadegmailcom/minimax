@@ -1,6 +1,6 @@
 *~
 *.gv
-*.o
+obj/
 minimax
 codeviz.*
 .vscode/

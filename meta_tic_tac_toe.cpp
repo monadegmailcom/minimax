@@ -113,7 +113,7 @@ Player Rule::get_winner() const
     return tic_tac_toe::Rule( meta_board ).get_winner();
 }
 
-vector< Move >& Rule::generate_moves()
+vector< Move >& Rule::generate_moves() const
 {
     moves.clear();
     // if last move is available, the inner board is fixed
@@ -157,8 +157,8 @@ void Rule::undo_move( Move const& move, Player)
 {
     board[move] = not_set;
     update( move / item_size );
-    assert (!move_stack.empty());
-    move_stack.pop_back();
+    if (!move_stack.empty())
+        move_stack.pop_back();
 }
 
 namespace simple_estimate {
