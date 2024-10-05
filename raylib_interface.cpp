@@ -300,6 +300,7 @@ struct Game
     enum Type { TicTacToe, UltimateTicTacToe };
     Menu player_menu = Menu { "player", "player x;player o" };
     Player players[2] = {Player( "player x", ::player1 ), Player( "player o", ::player2 )};
+    ::Player next_move = player1;
 };
 
 Menu game_menu = Menu { "game", "tic tac toe;ultimate tic tac toe" };
@@ -378,9 +379,8 @@ void show_side_panel()
             return;
         if ((dropped_down |= show_dropdown_menu( gui::action_menu, panel_y)))
             return;
-        
-        //if (show_button( "next move", player.name, panel_y ))
-        //    game.player_menu.selected = -game.player_menu.selected + 1;
+        if (show_button( "next move", game.next_move == player1 ? "player x" : "player o", panel_y ))
+            game.next_move = ::Player( -game.next_move);
     }
     else if (gui::action_menu.selected == gui::ConfigureAlgo)
     {
@@ -441,7 +441,6 @@ void show_side_panel()
 void show_board()
 {
     gui::Game& game = gui::games[gui::game_menu.selected];
-    ::Player& player = game.players[game.player_menu.selected].player;
     if (gui::game_menu.selected == gui::Game::TicTacToe)
     {
         using namespace tic_tac_toe;
@@ -449,7 +448,7 @@ void show_board()
         draw_board( rule.board, last_move );
 
         optional< Move > move = handle_board_event( 
-            rule.board, valid_moves, player, cell_indices_to_move, n );
+            rule.board, valid_moves, game.next_move, cell_indices_to_move, n );
 
         if (gui::action_menu.selected == gui::EditBoard)
         {
@@ -457,23 +456,23 @@ void show_board()
             if (move)
             {
                 if (rule.board[*move] != not_set)
-                    rule.undo_move( *move, player );
+                    rule.undo_move( *move, game.next_move );
                 else 
-                    rule.apply_move( *move, player );
+                    rule.apply_move( *move, game.next_move );
                 
                 valid_moves = rule.generate_moves();
             }
         }
         else if (gui::action_menu.selected == gui::Play)
         {
-            if (move)
+/*             if (move)
             {
                 last_move = move;
                 rule.apply_move( *move, player );
                 valid_moves = rule.generate_moves();
                 gui::games[gui::game_menu.selected].player_menu.selected = 
                 current_player = ::Player( -player );
-            }
+            } */
         }
     }
     else if (gui::game_menu.selected == gui::Game::UltimateTicTacToe)
@@ -482,16 +481,16 @@ void show_board()
 
         draw_board( rule, last_move );
         optional< Move > move = handle_board_event( 
-            rule.board.data(), valid_moves, player, cell_indices_to_move, n * n );
+            rule.board.data(), valid_moves, game.next_move, cell_indices_to_move, n * n );
         if (gui::action_menu.selected == gui::EditBoard)
         {
             last_move.reset();
             if (move)
             {
                 if (rule.board[*move] != not_set)
-                    rule.undo_move( *move, player );
+                    rule.undo_move( *move, game.next_move );
                 else 
-                    rule.apply_move( *move, player );
+                    rule.apply_move( *move, game.next_move );
                 
                 valid_moves = rule.generate_moves();
             }
@@ -506,14 +505,14 @@ void show_board()
                 draw_box( ij.quot, ij.rem, RED, outer_cell_size, 0, 0, 2 );
             }
 
-            if (move)
+/*             if (move)
             {
                 last_move = move;
                 rule.apply_move( *move, player );
                 valid_moves = rule.generate_moves();
                 current_player = ::Player( -player );
             }
-        }
+ */        }
     }
     else
         assert (false);
