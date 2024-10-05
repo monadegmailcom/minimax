@@ -3,10 +3,14 @@
 
 #include "raylib.h"
 
+// for some reasons this has to be defined
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 
 #include <iostream>
+#include <string>
+#include <cassert>
+
 using namespace std;
 
 const float board_width = 600;
@@ -14,6 +18,8 @@ const float panel_width = 200;
 const float panel_spacer = 10;
 const float panel_x = board_width + panel_spacer;
 const float text_box_height = 30;
+const int window_height = board_width;
+const int window_width = board_width + panel_width;
 
 void draw_player(
     Player player, int i, int j, Color color, float cell_size, float pos_x = 0, float pos_y = 0)
@@ -69,30 +75,29 @@ typedef uint8_t (*Convert)( pair< int, int > const& cell_indices );
 
 namespace tic_tac_toe {
 
-const float cell_size = board_width / 3;
-DeepRule rule;
-optional< Move > last_move;
-vector< Move > valid_moves = rule.generate_moves();
+    const float cell_size = board_width / 3;
+    DeepRule rule;
+    optional< Move > last_move;
+    vector< Move > valid_moves = rule.generate_moves();
+    Player current_player = player1;
 
-Player current_player = player1;
+    void draw_board( Player* board, optional< Move > const& last_move )
+    {
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+            {
+                const int idx = i * n + j;
+                const Player player = board[idx];
+                const Color player_color = last_move == idx ? RED : BLACK;
+                draw_box( i, j, BLACK, cell_size);
+                draw_player(player, i, j, player_color, cell_size);
+            }
+    }
 
-void draw_board( Player* board, optional< Move > const& last_move )
-{
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++)
-        {
-            const int idx = i * n + j;
-            const Player player = board[idx];
-            const Color player_color = last_move == idx ? RED : BLACK;
-            draw_box( i, j, BLACK, cell_size);
-            draw_player(player, i, j, player_color, cell_size);
-        }
-}
-
-Move cell_indices_to_move( pair< int, int > const& cell_indices )
-{
-    return cell_indices.first * n + cell_indices.second;
-}
+    Move cell_indices_to_move( pair< int, int > const& cell_indices )
+    {
+        return cell_indices.first * n + cell_indices.second;
+    }
 
 } // namespace tic_tac_toe {
 
@@ -121,7 +126,7 @@ void draw_board( Rule const& rule, optional< Move > const& last_move )
                 {
                     draw_box( i2, j2, BLACK, inner_cell_size, pos_x, pos_y, 1.0);
                     const Player player = rule.board[idx];
-                    const Color LIGHTRED = (Color){ 255, 127, 127, 255 };
+                    const Color LIGHTRED { 255, 127, 127, 255 };
                     const Color player_color = 
                         last_move == idx ? (terminal ? LIGHTRED : RED) : (terminal ? LIGHTGRAY : BLACK);
                     ++idx;
@@ -142,22 +147,65 @@ Move cell_indices_to_move( pair< int, int > const& cell_indices )
 
 } // namespace meta_tic_tac_toe {
 
-bool show_dropdown_menu( string const& items, int& selected,  bool& dropped_down, float& panel_y)
-{   
-    const Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, text_box_height };
-    panel_y += text_box_height + panel_spacer;
 
-    if (GuiDropdownBox( rect, items.c_str(), &selected, dropped_down))
-        dropped_down = !dropped_down;
-    return dropped_down;
+struct Menu 
+{
+    Menu( string const& name, string const& items, int selected = 0 ) 
+        : name( name ), dropped_down( false ), selected( selected ), items( items ) {}
+    string name;
+    bool dropped_down;
+    int selected;
+    string items;
+};
+
+struct TextBox
+{
+    TextBox( string const& label, string const& _text ) : label( label ), text( _text.begin(), _text.end())
+    { text.push_back( 0 ); }
+    string label;
+    vector< char > text;
+    bool edit_mode = false;
+};
+
+struct Spinner
+{
+    Spinner( string const& label, int value, int min, int max ) 
+        : label( label ), value( value ), min( min ), max( max ) {}
+    string label;
+    int value;
+    int min;
+    int max;
+    bool edit_mode = false;
+};
+
+bool show_dropdown_menu( Menu& menu, float& panel_y)
+{   
+    const float height = text_box_height + 2 * panel_spacer;
+    Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
+    GuiGroupBox( rect, menu.name.c_str());
+    rect.x += panel_spacer;
+    rect.y += panel_spacer;
+    rect.width -= 2 * panel_spacer;
+    rect.height -= 2 * panel_spacer;
+    panel_y += height + panel_spacer;
+
+    if (GuiDropdownBox( rect, menu.items.c_str(), &menu.selected, menu.dropped_down))
+        menu.dropped_down = !menu.dropped_down;
+    return menu.dropped_down;
 }
 
-bool show_button( string const& label, float& panel_y)
+bool show_button( string const& label, string const& text, float& panel_y)
 {
-    const Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, text_box_height };
-    panel_y += text_box_height + panel_spacer;
+    const float height = text_box_height + 2 * panel_spacer;
+    Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
+    GuiGroupBox( rect, label.c_str());
+    rect.x += panel_spacer;
+    rect.y += panel_spacer;
+    rect.width -= 2 * panel_spacer;
+    rect.height -= 2 * panel_spacer;
+    panel_y += height + panel_spacer;
 
-    return GuiButton( rect, label.c_str());
+    return GuiButton( rect, text.c_str());
 }
 
 void show_label( string const& label, string const& text, float& panel_y)
@@ -170,45 +218,99 @@ void show_label( string const& label, string const& text, float& panel_y)
     panel_y += text_box_height + panel_spacer;
 }
 
-string make_menu_item_list( const char* names[], size_t num_names)
+void show_spinner( Spinner& spinner, float& panel_y)
 {
-    string items;
-    for (size_t i = 0; i != num_names; ++i)
-    {
-        items += names[i];
-        if (i != num_names - 1)
-            items += ";"; 
-    }
-    return items;
+    const float height = text_box_height + 2 * panel_spacer;
+    Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
+    GuiGroupBox( rect, spinner.label.c_str());
+    rect.x += panel_spacer;
+    rect.y += panel_spacer;
+    rect.width -= 2 * panel_spacer;
+    rect.height -= 2 * panel_spacer;
+    panel_y += height + panel_spacer;
+
+    if (GuiSpinner( rect, "", &spinner.value, spinner.min, spinner.max, spinner.edit_mode ))
+        spinner.edit_mode = !spinner.edit_mode;
 }
 
-namespace game_menu {
+void show_text_box( TextBox& text_box, float& panel_y)
+{
+    const float height = text_box_height + 2 * panel_spacer;
+    Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
+    GuiGroupBox( rect, text_box.label.c_str());
+    rect.x += panel_spacer;
+    rect.y += panel_spacer;
+    rect.width -= 2 * panel_spacer;
+    rect.height -= 2 * panel_spacer;
+    panel_y += height + panel_spacer;
 
-enum Selection { ttt = 0, uttt = 1 };
-const char* names[] = { "tic tac toe", "ultimate tic tac toe" };
-int selected = 0;
-bool dropped_down = false;
-const string items = make_menu_item_list( names, sizeof( names ) / sizeof( char* ));
+    if (GuiTextBox( rect, text_box.text.data(), text_box.text.size(), text_box.edit_mode))
+        text_box.edit_mode = !text_box.edit_mode;
+}
 
-} // namespace game_menu {
+namespace gui {
 
-namespace mode_menu {
+struct Human
+{
+    static const int idx = 0;
+};
 
-enum Selection { play = 0, edit = 1 };
-const char* names[] = { "play", "edit" };
-int selected = 0;
-bool dropped_down = false;
-const string items = make_menu_item_list( names, sizeof( names ) / sizeof( char* ));
+struct Algo
+{
+    Spinner depth = Spinner( "depth", 1, 1, 10 );
+    Menu ttt_eval_menu = Menu {"score heuristic", "trivial estimate;simple estimate"};
+    Menu uttt_eval_menu = Menu {"score heuristic", "simple estimate"};
+};
 
-} // namespace mode_menu {
+struct Negamax : public Algo
+{
+    static const int idx = 1;
 
-namespace player_button {
-string label;
-Player* current_player = &tic_tac_toe::current_player;
-} // namespace player_button {
+    Menu reorder_menu = Menu { "reorder moves", "shuffle;reorder by score" };
+};
+
+struct Minimax : public Algo
+{
+    static const int idx = 2;
+    Menu recursion_menu = Menu { "recursion", "max depth;max vertices"};
+    Menu choose_menu = Menu {"choose", "first;bucket choose"};
+};
+
+struct Montecarlo
+{
+    static const int idx = 3;
+    Menu choose_menu = Menu {"choose", "choose best"};
+    Spinner simulations = Spinner( "simulations", 1000, 100, 100000 );
+    TextBox exploration_factor = TextBox( "exploration factor", "0.50" );
+};
+
+struct Player
+{
+    Player( string const& name, ::Player player ) : name( name ), player( player ) {}
+    string name;
+    ::Player player;
+    Menu algo_menu = Menu { "algorithm", "human;negamax;minimax;montecarlo" };
+    Negamax negamax;
+    Minimax minimax;
+    Montecarlo montecarlo;
+};
+
+struct Game 
+{
+    enum Type { TicTacToe, UltimateTicTacToe };
+    Menu player_menu = Menu { "player", "player x;player o" };
+    Player players[2] = {Player( "player x", ::player1 ), Player( "player o", ::player2 )};
+};
+
+Menu game_menu = Menu { "game", "tic tac toe;ultimate tic tac toe" };
+Game games[2];
+Menu action_menu = Menu { "action", "edit board;configure algorithm;play" };
+enum Action { EditBoard, ConfigureAlgo, Play };
+
+} // namespace gui {
 
 optional< uint8_t > handle_board_event( 
-    Player const* board, vector< uint8_t > const& valid_moves, Player player, Convert convert, int number_of_cells )  
+    ::Player const* board, vector< uint8_t > const& valid_moves, ::Player player, Convert convert, int number_of_cells )  
 {
     auto cell_indices = get_cell_indices( number_of_cells );
     if (!cell_indices)
@@ -217,7 +319,7 @@ optional< uint8_t > handle_board_event(
     const uint8_t move = convert(*cell_indices);
     draw_box( cell_indices->first, cell_indices->second, LIGHTGRAY, cell_size);
 
-    if (   mode_menu::selected == mode_menu::play 
+    if (   gui::action_menu.selected == gui::Play 
         && find( valid_moves.begin(), valid_moves.end(), move) == valid_moves.end())
         return {};
 
@@ -229,113 +331,205 @@ optional< uint8_t > handle_board_event(
     return {};
 }
 
-void show_gui()
+namespace gui {
+
+struct RaylibRender
 {
-    const int window_height = board_width;
-    const int window_width = board_width + panel_width;
-    InitWindow(window_width, window_height, "(ultimate) tic tac toe");
-
-    SetTargetFPS(10);
-
-    while (!WindowShouldClose())
+    RaylibRender()
     {
         BeginDrawing();
         ClearBackground(RAYWHITE);
-
-        float panel_y = panel_spacer;
-
-        if (show_dropdown_menu( game_menu::items, game_menu::selected, game_menu::dropped_down, panel_y))
-        {}
-        else if (show_dropdown_menu( mode_menu::items, mode_menu::selected, mode_menu::dropped_down, panel_y))
-        {}
-        else if (mode_menu::selected == mode_menu::edit)
-        {
-            if (show_button( player_button::label, panel_y ))
-                *player_button::current_player = Player( -( *player_button::current_player) );
-        }
-        else if (mode_menu::selected == mode_menu::play)
-            show_label( "current player", player_button::label, panel_y );
-        
-        player_button::label = ( *player_button::current_player == player1 ? "x" : "o");
-
-        // show board
-        if (game_menu::selected == game_menu::ttt)
-        {
-            using namespace tic_tac_toe;
-            player_button::current_player = &current_player;
-            draw_board( rule.board, last_move );
-
-            optional< Move > move = handle_board_event( 
-                rule.board, valid_moves, current_player, cell_indices_to_move, n );
-
-            if (mode_menu::selected == mode_menu::edit)
-            {
-                last_move.reset();
-                if (move)
-                {
-                    if (rule.board[*move] != not_set)
-                        rule.undo_move( *move, current_player );
-                    else 
-                        rule.apply_move( *move, current_player );
-                    
-                    valid_moves = rule.generate_moves();
-                }
-            }
-            else if (mode_menu::selected == mode_menu::play)
-            {
-                if (move)
-                {
-                    last_move = move;
-                    rule.apply_move( *move, current_player );
-                    valid_moves = rule.generate_moves();
-                    current_player = Player( -current_player );
-                }
-            }
-        }
-        else if (game_menu::selected == game_menu::uttt)
-        {
-            using namespace meta_tic_tac_toe;
-            player_button::current_player = &current_player;
-            draw_board( rule, last_move );
-            optional< Move > move = handle_board_event( 
-                rule.board.data(), valid_moves, current_player, cell_indices_to_move, n * n );
-            if (mode_menu::selected == mode_menu::edit)
-            {
-                last_move.reset();
-                if (move)
-                {
-                    if (rule.board[*move] != not_set)
-                        rule.undo_move( *move, current_player );
-                    else 
-                        rule.apply_move( *move, current_player );
-                    
-                    valid_moves = rule.generate_moves();
-                }
-            }
-            else if (mode_menu::selected == mode_menu::play)
-            {
-                // indicate valid outer board(s)
-                for (Move move : valid_moves)
-                {
-                    div_t d = div( move, n * n);
-                    div_t ij = div( d.quot, n );
-                    draw_box( ij.quot, ij.rem, RED, outer_cell_size, 0, 0, 2 );
-                }
-
-                if (move)
-                {
-                    last_move = move;
-                    rule.apply_move( *move, current_player );
-                    valid_moves = rule.generate_moves();
-                    current_player = Player( -current_player );
-                }
-            }
-        }
-        else
-            throw runtime_error("invalid game menu selection");
-        
-        EndDrawing();
     }
 
-    CloseWindow();
+    ~RaylibRender()
+    {
+        EndDrawing();
+    }
+};
+
+struct RaylibInit
+{
+    RaylibInit()
+    {
+        InitWindow(window_width, window_height, "(ultimate) tic tac toe");
+        SetTargetFPS(10);
+    }
+
+    ~RaylibInit()
+    {
+        CloseWindow();
+    }
+};
+
+void show_side_panel()
+{
+    float panel_y = panel_spacer;
+
+    if (gui::action_menu.selected == gui::EditBoard)
+    {
+        bool dropped_down = false;
+        if ((dropped_down |= show_dropdown_menu( gui::game_menu, panel_y)))
+            return;
+        gui::Game& game = gui::games[gui::game_menu.selected];
+        if ((dropped_down |= show_dropdown_menu( game.player_menu, panel_y)))
+            return;
+        gui::Player& player = game.players[game.player_menu.selected];
+        if ((dropped_down |= show_dropdown_menu( player.algo_menu, panel_y)))
+            return;
+        if ((dropped_down |= show_dropdown_menu( gui::action_menu, panel_y)))
+            return;
+        
+        //if (show_button( "next move", player.name, panel_y ))
+        //    game.player_menu.selected = -game.player_menu.selected + 1;
+    }
+    else if (gui::action_menu.selected == gui::ConfigureAlgo)
+    {
+        bool dropped_down = false;
+        gui::Game& game = gui::games[gui::game_menu.selected];
+        gui::Player& player = game.players[game.player_menu.selected];
+
+        if (player.algo_menu.selected == gui::Minimax::idx)
+        {
+            Menu* eval_menu = 0;
+            if (gui::game_menu.selected == gui::Game::TicTacToe)
+                eval_menu = &player.minimax.ttt_eval_menu;
+            else if (gui::game_menu.selected == gui::Game::UltimateTicTacToe)
+                eval_menu = &player.minimax.uttt_eval_menu;
+            assert (eval_menu);
+            if ((dropped_down |= show_dropdown_menu( *eval_menu, panel_y)))
+                return;
+
+            if ((dropped_down |= show_dropdown_menu( player.minimax.recursion_menu, panel_y )))
+                return;
+            if ((dropped_down |= show_dropdown_menu( player.minimax.choose_menu, panel_y )))
+                return;
+            if (!dropped_down)    
+                show_spinner( player.minimax.depth, panel_y);
+        }
+        else if (player.algo_menu.selected == gui::Negamax::idx)
+        {
+            Menu* eval_menu = 0;
+            if (gui::game_menu.selected == gui::Game::TicTacToe)
+                eval_menu = &player.negamax.ttt_eval_menu;
+            else if (gui::game_menu.selected == gui::Game::UltimateTicTacToe)
+                eval_menu = &player.negamax.uttt_eval_menu;
+            assert (eval_menu);
+            if ((dropped_down |= show_dropdown_menu( *eval_menu, panel_y)))
+                return;
+
+            if ((dropped_down |= show_dropdown_menu( player.negamax.reorder_menu, panel_y)))
+                return;
+            if (!dropped_down)    
+                show_spinner( player.negamax.depth, panel_y);
+        }
+        else if (player.algo_menu.selected == gui::Montecarlo::idx)
+        {
+            if ((dropped_down |= show_dropdown_menu( player.montecarlo.choose_menu, panel_y)))
+                return;
+            if (!dropped_down)    
+            {
+                show_spinner( player.montecarlo.simulations, panel_y);
+                show_text_box( player.montecarlo.exploration_factor, panel_y);
+            }
+        }
+
+        if (!dropped_down && show_button( "save", "ok", panel_y))
+            gui::action_menu.selected = gui::EditBoard;
+    }
 }
+
+void show_board()
+{
+    gui::Game& game = gui::games[gui::game_menu.selected];
+    ::Player& player = game.players[game.player_menu.selected].player;
+    if (gui::game_menu.selected == gui::Game::TicTacToe)
+    {
+        using namespace tic_tac_toe;
+
+        draw_board( rule.board, last_move );
+
+        optional< Move > move = handle_board_event( 
+            rule.board, valid_moves, player, cell_indices_to_move, n );
+
+        if (gui::action_menu.selected == gui::EditBoard)
+        {
+            last_move.reset();
+            if (move)
+            {
+                if (rule.board[*move] != not_set)
+                    rule.undo_move( *move, player );
+                else 
+                    rule.apply_move( *move, player );
+                
+                valid_moves = rule.generate_moves();
+            }
+        }
+        else if (gui::action_menu.selected == gui::Play)
+        {
+            if (move)
+            {
+                last_move = move;
+                rule.apply_move( *move, player );
+                valid_moves = rule.generate_moves();
+                gui::games[gui::game_menu.selected].player_menu.selected = 
+                current_player = ::Player( -player );
+            }
+        }
+    }
+    else if (gui::game_menu.selected == gui::Game::UltimateTicTacToe)
+    {
+        using namespace meta_tic_tac_toe;
+
+        draw_board( rule, last_move );
+        optional< Move > move = handle_board_event( 
+            rule.board.data(), valid_moves, player, cell_indices_to_move, n * n );
+        if (gui::action_menu.selected == gui::EditBoard)
+        {
+            last_move.reset();
+            if (move)
+            {
+                if (rule.board[*move] != not_set)
+                    rule.undo_move( *move, player );
+                else 
+                    rule.apply_move( *move, player );
+                
+                valid_moves = rule.generate_moves();
+            }
+        }
+        else if (gui::action_menu.selected == gui::Play)
+        {
+            // indicate valid outer board(s)
+            for (Move move : valid_moves)
+            {
+                div_t d = div( move, n * n);
+                div_t ij = div( d.quot, n );
+                draw_box( ij.quot, ij.rem, RED, outer_cell_size, 0, 0, 2 );
+            }
+
+            if (move)
+            {
+                last_move = move;
+                rule.apply_move( *move, player );
+                valid_moves = rule.generate_moves();
+                current_player = ::Player( -player );
+            }
+        }
+    }
+    else
+        assert (false);
+}
+
+void show()
+{
+    RaylibInit raylib_init;
+
+    while (!WindowShouldClose())
+    {
+        RaylibRender raylib_render;
+
+        show_side_panel();
+        show_board();
+    }
+}
+
+} // namespace gui {

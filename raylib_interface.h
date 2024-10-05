@@ -1,1 +1,4 @@
-void show_gui();
+namespace gui {
+void show();
+}
+

@@ -142,7 +142,7 @@ void show_gui();
 
 int main()
 {
-    show_gui();
+    gui::show();
     //start_console_interface();
     return 0;
     //run_meta_tic_tac_toe();
