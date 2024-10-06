@@ -75,29 +75,28 @@ typedef uint8_t (*Convert)( pair< int, int > const& cell_indices );
 
 namespace tic_tac_toe {
 
-    const float cell_size = board_width / 3;
-    DeepRule rule;
-    optional< Move > last_move;
-    vector< Move > valid_moves = rule.generate_moves();
-    Player current_player = player1;
+const float cell_size = board_width / 3;
+DeepRule rule;
+optional< Move > last_move;
+vector< Move > valid_moves = rule.generate_moves();
 
-    void draw_board( Player* board, optional< Move > const& last_move )
-    {
-        for (int i = 0; i < n; i++)
-            for (int j = 0; j < n; j++)
-            {
-                const int idx = i * n + j;
-                const Player player = board[idx];
-                const Color player_color = last_move == idx ? RED : BLACK;
-                draw_box( i, j, BLACK, cell_size);
-                draw_player(player, i, j, player_color, cell_size);
-            }
-    }
+void draw_board( Player* board, optional< Move > const& last_move )
+{
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+        {
+            const int idx = i * n + j;
+            const Player player = board[idx];
+            const Color player_color = last_move == idx ? RED : BLACK;
+            draw_box( i, j, BLACK, cell_size);
+            draw_player(player, i, j, player_color, cell_size);
+        }
+}
 
-    Move cell_indices_to_move( pair< int, int > const& cell_indices )
-    {
-        return cell_indices.first * n + cell_indices.second;
-    }
+Move cell_indices_to_move( pair< int, int > const& cell_indices )
+{
+    return cell_indices.first * n + cell_indices.second;
+}
 
 } // namespace tic_tac_toe {
 
@@ -108,7 +107,6 @@ const float inner_cell_size = outer_cell_size / 3;
 Rule rule;
 optional< Move > last_move;
 vector< Move > valid_moves = rule.generate_moves();
-Player current_player = player1;
 
 void draw_board( Rule const& rule, optional< Move > const& last_move )
 {
@@ -150,12 +148,21 @@ Move cell_indices_to_move( pair< int, int > const& cell_indices )
 
 struct Menu 
 {
-    Menu( string const& name, string const& items, int selected = 0 ) 
-        : name( name ), dropped_down( false ), selected( selected ), items( items ) {}
+    Menu( string const& name, vector< string > const& items, int selected = 0 ) 
+        : name( name ), dropped_down( false ), selected( selected ), items( items ) 
+    {
+        if (!items.empty())
+        {
+            str = items.front();
+            for (auto itr = items.begin() + 1; itr != items.end(); ++itr)
+                str += ";" + *itr;
+        }
+    }
     string name;
     bool dropped_down;
     int selected;
-    string items;
+    const vector< string > items;
+    string str;
 };
 
 struct TextBox
@@ -189,7 +196,7 @@ bool show_dropdown_menu( Menu& menu, float& panel_y)
     rect.height -= 2 * panel_spacer;
     panel_y += height + panel_spacer;
 
-    if (GuiDropdownBox( rect, menu.items.c_str(), &menu.selected, menu.dropped_down))
+    if (GuiDropdownBox( rect, menu.str.c_str(), &menu.selected, menu.dropped_down))
         menu.dropped_down = !menu.dropped_down;
     return menu.dropped_down;
 }
@@ -258,28 +265,28 @@ struct Human
 struct Algo
 {
     Spinner depth = Spinner( "depth", 1, 1, 10 );
-    Menu ttt_eval_menu = Menu {"score heuristic", "trivial estimate;simple estimate"};
-    Menu uttt_eval_menu = Menu {"score heuristic", "simple estimate"};
+    Menu ttt_eval_menu = Menu {"score heuristic", {"trivial estimate", "simple estimate"}};
+    Menu uttt_eval_menu = Menu {"score heuristic", {"simple estimate"}};
 };
 
 struct Negamax : public Algo
 {
     static const int idx = 1;
 
-    Menu reorder_menu = Menu { "reorder moves", "shuffle;reorder by score" };
+    Menu reorder_menu = Menu { "reorder moves", {"shuffle", "reorder by score"} };
 };
 
 struct Minimax : public Algo
 {
     static const int idx = 2;
-    Menu recursion_menu = Menu { "recursion", "max depth;max vertices"};
-    Menu choose_menu = Menu {"choose", "first;bucket choose"};
+    Menu recursion_menu = Menu { "recursion", {"max depth", "max vertices"}};
+    Menu choose_menu = Menu {"choose", {"first", "bucket choose"}};
 };
 
 struct Montecarlo
 {
     static const int idx = 3;
-    Menu choose_menu = Menu {"choose", "choose best"};
+    Menu choose_menu = Menu {"choose", {"choose best"}};
     Spinner simulations = Spinner( "simulations", 1000, 100, 100000 );
     TextBox exploration_factor = TextBox( "exploration factor", "0.50" );
 };
@@ -289,7 +296,8 @@ struct Player
     Player( string const& name, ::Player player ) : name( name ), player( player ) {}
     string name;
     ::Player player;
-    Menu algo_menu = Menu { "algorithm", "human;negamax;minimax;montecarlo" };
+    Menu algo_menu = Menu { "algorithm", {"human", "negamax", "minimax", "montecarlo"} };
+
     Negamax negamax;
     Minimax minimax;
     Montecarlo montecarlo;
@@ -298,14 +306,15 @@ struct Player
 struct Game 
 {
     enum Type { TicTacToe, UltimateTicTacToe };
-    Menu player_menu = Menu { "player", "player x;player o" };
+    Menu player_menu = Menu { "player", {"player x", "player o"} };
     Player players[2] = {Player( "player x", ::player1 ), Player( "player o", ::player2 )};
-    ::Player next_move = player1;
+    Player* next_move = &players[0];
+    ::Player winner = not_set;
 };
 
-Menu game_menu = Menu { "game", "tic tac toe;ultimate tic tac toe" };
+Menu game_menu = Menu { "game", {"tic tac toe", "ultimate tic tac toe"} };
 Game games[2];
-Menu action_menu = Menu { "action", "edit board;configure algorithm;play" };
+Menu action_menu = Menu { "action", {"edit board","configure algorithm", "play"} };
 enum Action { EditBoard, ConfigureAlgo, Play };
 
 } // namespace gui {
@@ -379,8 +388,9 @@ void show_side_panel()
             return;
         if ((dropped_down |= show_dropdown_menu( gui::action_menu, panel_y)))
             return;
-        if (show_button( "next move", game.next_move == player1 ? "player x" : "player o", panel_y ))
-            game.next_move = ::Player( -game.next_move);
+        if (show_button( "next move", game.next_move->name, panel_y ))
+            game.next_move = (game.next_move == &game.players[0]) 
+                ? &game.players[1] : &game.players[0];
     }
     else if (gui::action_menu.selected == gui::ConfigureAlgo)
     {
@@ -436,6 +446,35 @@ void show_side_panel()
         if (!dropped_down && show_button( "save", "ok", panel_y))
             gui::action_menu.selected = gui::EditBoard;
     }
+    else if (gui::action_menu.selected == gui::Play)
+    {
+        gui::Game& game = gui::games[gui::game_menu.selected];
+        show_label( "next move", game.next_move->name, panel_y );
+
+        const char* button_text = 0;
+        string status_text;
+        if (game.winner == not_set)
+        { 
+            button_text = "abort game";
+            status_text = game.next_move->algo_menu.items[game.next_move->algo_menu.selected] + " thinking...";
+        }
+        else
+        {
+            button_text = "back";
+            status_text = game.players[game.winner == player1 ? 0 : 1].name + " wins!";
+        }
+
+        show_label( "status", status_text.c_str(), panel_y );
+        
+        if (show_button( "", button_text, panel_y))
+            gui::action_menu.selected = gui::EditBoard;
+
+        if (gui::game_menu.selected == gui::Game::TicTacToe)
+        {
+            using namespace tic_tac_toe;
+            
+        }
+    }
 }
 
 void show_board()
@@ -447,8 +486,10 @@ void show_board()
 
         draw_board( rule.board, last_move );
 
-        optional< Move > move = handle_board_event( 
-            rule.board, valid_moves, game.next_move, cell_indices_to_move, n );
+        optional< Move > move;
+        if (game.next_move->algo_menu.selected == gui::Human::idx && game.winner == not_set)
+            move = handle_board_event( 
+                rule.board, valid_moves, game.next_move->player, cell_indices_to_move, n );
 
         if (gui::action_menu.selected == gui::EditBoard)
         {
@@ -456,23 +497,25 @@ void show_board()
             if (move)
             {
                 if (rule.board[*move] != not_set)
-                    rule.undo_move( *move, game.next_move );
+                    rule.undo_move( *move, game.next_move->player );
                 else 
-                    rule.apply_move( *move, game.next_move );
+                    rule.apply_move( *move, game.next_move->player );
                 
                 valid_moves = rule.generate_moves();
+                game.winner = rule.get_winner();
             }
         }
         else if (gui::action_menu.selected == gui::Play)
         {
-/*             if (move)
+            if (move)
             {
                 last_move = move;
-                rule.apply_move( *move, player );
+                rule.apply_move( *move, game.next_move->player );
                 valid_moves = rule.generate_moves();
-                gui::games[gui::game_menu.selected].player_menu.selected = 
-                current_player = ::Player( -player );
-            } */
+                game.winner = rule.get_winner();
+                game.next_move = (game.next_move == &game.players[0]) 
+                    ? &game.players[1] : &game.players[0];
+            }
         }
     }
     else if (gui::game_menu.selected == gui::Game::UltimateTicTacToe)
@@ -480,19 +523,22 @@ void show_board()
         using namespace meta_tic_tac_toe;
 
         draw_board( rule, last_move );
-        optional< Move > move = handle_board_event( 
-            rule.board.data(), valid_moves, game.next_move, cell_indices_to_move, n * n );
+        optional< Move > move;
+        if (game.next_move->algo_menu.selected == gui::Human::idx && game.winner == not_set)
+            move = handle_board_event( 
+                rule.board.data(), valid_moves, game.next_move->player, cell_indices_to_move, n * n );
         if (gui::action_menu.selected == gui::EditBoard)
         {
             last_move.reset();
             if (move)
             {
                 if (rule.board[*move] != not_set)
-                    rule.undo_move( *move, game.next_move );
+                    rule.undo_move( *move, game.next_move->player );
                 else 
-                    rule.apply_move( *move, game.next_move );
+                    rule.apply_move( *move, game.next_move->player );
                 
                 valid_moves = rule.generate_moves();
+                game.winner = rule.get_winner();
             }
         }
         else if (gui::action_menu.selected == gui::Play)
@@ -505,14 +551,16 @@ void show_board()
                 draw_box( ij.quot, ij.rem, RED, outer_cell_size, 0, 0, 2 );
             }
 
-/*             if (move)
+            if (move)
             {
                 last_move = move;
-                rule.apply_move( *move, player );
+                rule.apply_move( *move, game.next_move->player );
                 valid_moves = rule.generate_moves();
-                current_player = ::Player( -player );
+                game.winner = rule.get_winner();
+                game.next_move = (game.next_move == &game.players[0]) 
+                    ? &game.players[1] : &game.players[0];
             }
- */        }
+        }
     }
     else
         assert (false);
