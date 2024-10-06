@@ -77,6 +77,7 @@ namespace tic_tac_toe {
 
 const float cell_size = board_width / 3;
 DeepRule rule;
+DeepRule initial_rule;
 optional< Move > last_move;
 vector< Move > valid_moves = rule.generate_moves();
 
@@ -105,6 +106,7 @@ namespace meta_tic_tac_toe {
 const float outer_cell_size = board_width / 3;
 const float inner_cell_size = outer_cell_size / 3;
 Rule rule;
+Rule initial_rule;
 optional< Move > last_move;
 vector< Move > valid_moves = rule.generate_moves();
 
@@ -144,7 +146,6 @@ Move cell_indices_to_move( pair< int, int > const& cell_indices )
 }
 
 } // namespace meta_tic_tac_toe {
-
 
 struct Menu 
 {
@@ -314,8 +315,9 @@ struct Game
 
 Menu game_menu = Menu { "game", {"tic tac toe", "ultimate tic tac toe"} };
 Game games[2];
-Menu action_menu = Menu { "action", {"edit board","configure algorithm", "play"} };
-enum Action { EditBoard, ConfigureAlgo, Play };
+enum Action { EditBoard, ClearBoard, ConfigureAlgo, Play };
+Menu action_menu = 
+    Menu { "action", {"edit board", "clear board", "configure algorithm", "play"}, Play };
 
 } // namespace gui {
 
@@ -391,6 +393,24 @@ void show_side_panel()
         if (show_button( "next move", game.next_move->name, panel_y ))
             game.next_move = (game.next_move == &game.players[0]) 
                 ? &game.players[1] : &game.players[0];
+    }
+    else if (gui::action_menu.selected == gui::ClearBoard)
+    {
+        if (gui::game_menu.selected == gui::Game::TicTacToe)
+        {
+            using namespace tic_tac_toe;
+            rule.copy_from( initial_rule );
+            valid_moves = rule.generate_moves();
+            last_move.reset();
+        }
+        else if (gui::game_menu.selected == gui::Game::UltimateTicTacToe)
+        {
+            using namespace meta_tic_tac_toe;
+            rule.copy_from( initial_rule );
+            valid_moves = rule.generate_moves();
+            last_move.reset();
+        }
+        gui::action_menu.selected = gui::EditBoard;
     }
     else if (gui::action_menu.selected == gui::ConfigureAlgo)
     {
