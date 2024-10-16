@@ -1,5 +1,4 @@
 *~
-*.gv
 obj/
 minimax
 codeviz.*

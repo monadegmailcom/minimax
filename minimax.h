@@ -4,6 +4,8 @@
 #include <array>
 #include <list>
 #include <cmath>
+#include <random>
+
 #include <boost/pool/pool_alloc.hpp>
 
 template< typename MoveT >
