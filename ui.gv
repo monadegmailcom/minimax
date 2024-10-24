@@ -1,26 +1,26 @@
 digraph ui {
     "game" [label = "configure game", shape = box]
-    "game" -> choose, choose2, algorithm, play_game, "edit board"
+    "game" -> "edit board", choose, choose2, algorithm, play_game
     choose [shape = diamond]
     choose -> "tic tac toe", "ultimate tic tac toe"
     choose2 [label = toggle, shape = diamond]
     choose2 -> "player1", "player2" 
     play_game [label = "play game", shape = box]
-    { rank = same; game, play_game }
     play_game -> game, "make move"
+    { rank = same; game, play_game, "edit board", "make move" }
     algorithm [label = algorithm, shape = diamond]
     algorithm -> human, minimax, negamax, montecarlo
     score [shape = diamond]
     recursion [shape = diamond]
     "choose move" [shape = diamond]
-    minimax -> score, recursion, "choose move"
+    minimax -> score, recursion, "choose move", depth
     recursion -> "max depth", "max vertices"
     "choose move" -> best, "epsilon bucket"
     score -> "trivial estimate", "simple estimate"
     "trivial estimate" [xlabel = ttt]
     reorder [shape = diamond]
     reorder -> shuffle, "by score"
-    negamax -> score, reorder
+    negamax -> score, reorder, depth
     mc_choose [label = choose, shape = diamond]
     montecarlo -> mc_choose, simulations, exploration
     mc_best [label = best]

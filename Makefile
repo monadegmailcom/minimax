@@ -1,15 +1,13 @@
 CC=g++
 # or use gcc with CC=g++-11
-# install boost and raylib with homebrew, clone raygui repo in the same directory as this repo
-# switch to tag 4.0 of raygui repo to be compatible with raylib 5.0
+# install boost and raylib with homebrew, clone raygui repo in the same directory level as this repo
 HOMEBREW=/opt/homebrew/Cellar
 RAYLIB_PATH=$(HOMEBREW)/raylib/5.0
 BOOST_PATH=$(HOMEBREW)/boost/1.85.0
 INCLUDE=-I$(BOOST_PATH)/include/ -I$(RAYLIB_PATH)/include -isystem../raygui/src
 LINK=-L$(RAYLIB_PATH)/lib -lraylib
-COMPILE_FLAGS=-Wall -Wpedantic
-DEBUG=-g $(COMPILE_FLAGS)
-RELEASE=-O3 $(COMPILE_FLAGS) -DNDEBUG
+DEBUG=-g
+RELEASE=-O3 -DNDEBUG
 # don't forget to clean if you change OPT
 OPT=$(DEBUG)
 #OPT=$(RELEASE)

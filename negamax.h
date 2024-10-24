@@ -80,6 +80,7 @@ struct Negamax
 
     size_t count = 0;
     size_t max_moves = 0;
+    std::atomic< bool > stop = false;
 
     double operator()( size_t depth, Player player )
     {
@@ -91,6 +92,9 @@ struct Negamax
     double rec( size_t depth, double alpha, double beta, Player player )
     {
         ++count;
+
+        if (stop)
+            return 0.0;
 
         // if we have a winner, we are done
         const Player winner = rule->get_winner();

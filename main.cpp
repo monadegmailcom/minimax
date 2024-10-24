@@ -8,8 +8,9 @@
 using namespace std;
 using namespace placeholders;
 
-namespace meta_tic_tac_toe {
+/*
 
+namespace meta_tic_tac_toe {
 struct InteractiveAlgorithm : public interactive::Algorithm< Move >
 {
     InteractiveAlgorithm( GenericRule< Move > const& initial_rule, Player player ) 
@@ -47,7 +48,7 @@ void run_meta_tic_tac_toe()
     ReOrder< Move > reorder =
         bind( &ReorderByScore< Move >::operator(), &reorder_by_score, _1, _2, _3, _4 );
 
-    MaxVertices< Move > max_vertices( 280000 );
+    auto max_vertices = new MaxVertices< Move >( 280000 );
 
     MaxDepth< Move > max_depth( 7 );
 
@@ -60,7 +61,7 @@ void run_meta_tic_tac_toe()
 
     meta_tic_tac_toe::InteractiveAlgorithm user( initial_rule, player2 );
 
-    montecarlo::ChooseBest< Move > choose_best;
+    auto choose_best = new montecarlo::ChooseBest< Move >();
     montecarlo::Algorithm< Move > monte_algo( initial_rule, player1, choose_best, 8000, 0.3, false );
     montecarlo::Algorithm< Move > monte_algo2( initial_rule, player1, choose_best, 80000, 0.4, true ); // best exploration factor
     //montecarlo::Algorithm< Move > monte_algo2( player2, choose_best, 80, 0.4, false ); // best exploration factor
@@ -117,7 +118,7 @@ void monte()
 //    NegamaxAlgorithm< Move > algo1( player1, 5, reorder, eval, false );
     NegamaxAlgorithm< Move > algo3( initial_rule, player1, 2, reorder, eval, false );
 
-    montecarlo::ChooseBest< Move > choose;
+    auto choose = new montecarlo::ChooseBest< Move >();
     montecarlo::Algorithm< Move > algo2( initial_rule, player2, choose, 2000, 1.41, true );
 
     //arena( rule, algo1, algo2, 1000, false );
@@ -137,14 +138,11 @@ void monte()
     cout << "resulting board" << endl;
     rule.print_board( out_stream, optional< size_t >());
 }
-
-void show_gui();
+*/
 
 int main()
 {
     gui::show();
-    //start_console_interface();
-    return 0;
     //run_meta_tic_tac_toe();
     //monte();
 

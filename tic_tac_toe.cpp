@@ -110,16 +110,16 @@ void Rule::undo_move( Move const& move, Player)
 }
 
 namespace trivial_estimate {
-    double eval( Rule const& rule )
-    {
-        Player winner = rule.get_winner();
-        if (winner == player1)
-            return player1_won;
-        else if (winner == player2)
-            return player2_won;
-        else
-            return 0.0;
-    }
+double eval( Rule const& rule )
+{
+    Player winner = rule.get_winner();
+    if (winner == player1)
+        return player1_won;
+    else if (winner == player2)
+        return player2_won;
+    else
+        return 0.0;
+}
 } // namespace trivial_estimate {
 
 namespace simple_estimate {
@@ -220,16 +220,29 @@ namespace simple_estimate {
 
 } // namespace simple_estimate {
 
+DeepRule::DeepRule() : 
+    Rule( nullptr ), mem{ not_set } 
+{ 
+    board = mem.data(); 
+}
+
+DeepRule::DeepRule( DeepRule const& rule ) : 
+    Rule( nullptr ), mem( rule.mem ) 
+{ 
+    board = mem.data();
+}
+
 GenericRule< Move >* DeepRule::clone() const
 {
-    return new Rule( *this );
+    return new DeepRule( *this );
 }
 
 void DeepRule::copy_from( GenericRule< Move > const& generic_rule )
 {
     DeepRule const* rule = dynamic_cast< DeepRule const* >( &generic_rule );
-    if (rule)
-        mem = rule->mem;
+    if (!rule)
+        throw runtime_error( "not an instance of DeepRule");
+    mem = rule->mem;
 }
 
 } // namespace tic_tac_toe {

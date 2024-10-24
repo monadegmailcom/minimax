@@ -53,6 +53,7 @@ template< typename MoveT >
 struct Recursion
 {
     virtual RecState operator()( Minimax< MoveT > const& ) = 0;
+    virtual ~Recursion() {}
 };
 
 template< typename MoveT >
@@ -77,6 +78,7 @@ struct Minimax
     std::random_device rd;
     std::mt19937 g { rd() };
     std::function< void (Minimax*) > debug;
+    std::atomic< bool > stop = false;
 
     static bool prune1( double& alpha, double& beta, double& value,
                         Vertex< MoveT >& vertex )
@@ -114,6 +116,9 @@ struct Minimax
     bool rec( double alpha, double beta, Player player, Vertex< MoveT >& vertex )
     {
         ++rec_count;
+
+        if (stop)
+            return true;
 
         // if we know, it's terminal, we are done
         if (vertex.is_terminal)
@@ -244,7 +249,7 @@ struct MaxDepth : public Recursion< MoveT >
     {
         if (minimax.depth == 0)
         {
-            if (depth < max_depth)
+            if (depth <= max_depth)
             {
                 ++depth;
                 // debug
@@ -322,12 +327,11 @@ struct ChooseMove
 
     MoveT const& operator()(VertexList< MoveT > const& children)
     {
-        const double v = children.front().value ? *children.front().value : 0.0;
+        const double v = children.front().value;
         moves.clear();
-        for (auto itr = children.begin();
-             itr != children.end() && itr->value
-             && (std::isnan( *itr->value - v)
-                 || std::abs( *itr->value - v ) <= epsilon); ++itr)
+        for (auto itr = children.begin(); itr != children.end()
+             && (std::isnan( itr->value - v)
+                 || std::abs( itr->value - v ) <= epsilon); ++itr)
             moves.push_back( itr->move );
         auto dist = std::uniform_int_distribution< int >( 0, moves.size() - 1);
         return moves[dist( g )];

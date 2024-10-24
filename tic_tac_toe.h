@@ -27,7 +27,8 @@ struct Rule : public GenericRule< Move >
 
 struct DeepRule : public Rule
 {
-    DeepRule() : Rule( nullptr ), mem{ not_set } { board = mem.data(); }
+    DeepRule();
+    DeepRule( DeepRule const& );
     GenericRule< Move >* clone() const;
     void copy_from( GenericRule< Move > const& );
     std::array< Player, n * n > mem;

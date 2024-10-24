@@ -162,6 +162,8 @@ struct MCTS
     {
         for(; simulations && !root.is_terminal; --simulations)
         {
+            if (stop)
+                return;
             simulate( root, player );
             //debug( this );
         }
@@ -191,6 +193,7 @@ struct MCTS
     std::vector< std::pair< double, Node< MoveT >* > > values;
     std::random_device rd;
     std::mt19937 gen;
+    std::atomic< bool > stop = false;
 };
 
 } // namespace montecarlo {

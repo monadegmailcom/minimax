@@ -3,6 +3,8 @@
 #include <iostream>
 #include <chrono>
 #include <memory>
+#include <future>
+
 #include <cassert>
 
 struct Statistic
@@ -18,15 +20,40 @@ template< typename MoveT >
 struct Algorithm
 {
     Algorithm( Player player, GenericRule< MoveT > const& initial_rule ) 
-    : player( player ), initial_rule( initial_rule ) {}
-    virtual ~Algorithm() {}
-    virtual MoveT get_move() = 0;
-    virtual void opponent_move( MoveT const& ) = 0;
-    virtual void reset() = 0;
+    : player( player ), initial_rule( initial_rule.clone()) {}
 
     std::chrono::microseconds duration { 0 };
     const Player player;
-    GenericRule< MoveT > const& initial_rule;
+    std::unique_ptr< GenericRule< MoveT > > initial_rule;
+    std::future< MoveT > move_future;
+
+    std::optional< MoveT > get_move()
+    {
+        if (!move_future.valid())
+            // after the assignment the future is valid
+            move_future = get_future();
+
+        // we are polling for the player to make a move
+        if (move_future.wait_for( std::chrono::milliseconds( 0 )) == std::future_status::ready)
+            // this sets the future to invalid state
+            return move_future.get();
+        else            
+            return {};
+    }
+
+    void stop() 
+    { 
+        stop_impl(); 
+        // wait for the future to finish
+        if (move_future.valid())
+            move_future.wait();
+    }
+
+    virtual ~Algorithm() {}
+    virtual void opponent_move( MoveT const& ) = 0;
+    virtual void reset() = 0;
+    virtual void stop_impl() = 0;
+    virtual std::future< MoveT > get_future() = 0;
 };
 
 namespace interactive {
@@ -35,49 +62,28 @@ template< typename MoveT >
 struct Algorithm : public ::Algorithm< MoveT >
 {
     Algorithm( GenericRule< MoveT > const& initial_rule, Player player ) 
-    : ::Algorithm< MoveT >( player, initial_rule ), rule( initial_rule.clone()) {}
+    : ::Algorithm< MoveT >( player, initial_rule ) {}
 
     void opponent_move( MoveT const& move ) 
-    {
-        rule->apply_move( move, Player( -this->player ));
-        prev_move = move;
-    }
+    {}
 
     void reset() 
-    { 
-        rule->copy_from( this->initial_rule );
-        prev_move.reset(); 
-    }
+    {}
 
-    MoveT get_move()
+    std::future< MoveT > get_future()
     {
-        std::cout << "current board:" << std::endl;
-        rule->print_board( out_stream, prev_move );
-
-        std::cout << "possible moves: ";
-        auto moves = this->rule->generate_moves();
-        for (auto move : moves)
-        {
-            rule->print_move( std::cout, move );
-            std::cout << ", " << out_stream.space;
-        }
-
-        MoveT move;
-        do
-        {
-            std::cout << std::endl << "your choice? ";
-            move = get_user_input();
-        } while (std::find( moves.begin(), moves.end(), move ) == moves.end());
-
-        rule->apply_move( move, this->player );
-        return move;
+        move_promise = std::promise< MoveT >();
+        return move_promise.get_future();
     }
 
-    virtual MoveT get_user_input() const = 0;
+    void stop_impl() 
+    {
+        // set some move to set future status to ready, the move will not be used
+        if (this->move_future.valid())
+            move_promise.set_value( MoveT());
+    }
 
-    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
-    std::optional< MoveT > prev_move;
-    std::unique_ptr< GenericRule< MoveT > > rule;
+    std::promise< MoveT > move_promise;
 };
 
 } // namespace interactive {
@@ -88,6 +94,7 @@ template< typename MoveT >
 struct ChooseMove
 {
     virtual Node< MoveT > const& operator()( NodeList< MoveT > const& nodes ) const = 0;
+    virtual ~ChooseMove() {}
 };
 
 template< typename MoveT >
@@ -104,13 +111,13 @@ struct ChooseBest : public ChooseMove< MoveT >
 template< typename MoveT >
 struct Algorithm : public ::Algorithm< MoveT >
 {
-    Algorithm( GenericRule< MoveT > const& initial_rule, Player player, ChooseMove< MoveT >& choose_move, 
+    Algorithm( GenericRule< MoveT > const& initial_rule, Player player, ChooseMove< MoveT >* choose_move, 
                size_t simulations, double exploration, bool trace ) :
         ::Algorithm< MoveT >( player, initial_rule ), choose_move( choose_move ), simulations( simulations ),
         mcts( initial_rule, exploration ), trace( trace ) 
         {}
 
-    MoveT get_move()
+    std::future< MoveT > get_future()
     {
 //        mcts.debug = [this]( MCTS< MoveT >* mcts )
   /*      if (trace)
@@ -124,32 +131,24 @@ struct Algorithm : public ::Algorithm< MoveT >
             montecarlo::tree::PrintTree< MoveT > print( gv_before, mcts.root, mcts.exploration, *mcts.rule, player, Circular );
             montecarlo::tree::PrintTree< MoveT > print2( gv2_before, mcts.root, mcts.exploration, *mcts.rule, player, Circular, Stats );
         }*/
-        mcts( simulations, this->player );
-        const MoveT move = choose_move( mcts.root.children).move;
-
-        if (trace)
-        {
-            std::cout << "player = " << this->player << std::endl
-                      << "move   = " << int( move ) << std::endl;
-            montecarlo::tree::lens( *mcts.rule, mcts.root, mcts.exploration, this->player );
-        }
+        return std::async( 
+            [this]() 
+            { 
+                mcts( simulations, this->player );
+                const MoveT move = (*choose_move)( mcts.root.children).move;
+                mcts.apply_move( move, this->player );
+                return move; 
+            });
+       
+        //if (trace)
+        //    montecarlo::tree::lens( *mcts.rule, mcts.root, mcts.exploration, this->player );
 
         // debug
         //montecarlo::MCTS< MoveT >& mcts = dynamic_cast< montecarlo::Algorithm< MoveT >& >( *this ).mcts;
         //debug_trees.emplace_back( mcts.root );
 
-        mcts.apply_move( move, this->player );
-
         // debug
         //debug_trees.emplace_back( mcts.root );
-
-        if (trace)
-        {
-            mcts.rule->print_board( out_stream, move );
-            std::cout << std::endl << std::endl;
-        }
-
-        return move;
     }
 
     void opponent_move( MoveT const& move )
@@ -159,15 +158,20 @@ struct Algorithm : public ::Algorithm< MoveT >
 
     void reset()
     {
-        mcts.init( this->initial_rule );
+        mcts.init( *this->initial_rule );
      //   debug_trees.clear();
     }
 
-    ChooseMove< MoveT >& choose_move;
+    void stop_impl() 
+    {
+        mcts.stop = true;
+    }
+
+    std::unique_ptr< ChooseMove< MoveT > > choose_move;
     size_t simulations;
     MCTS< MoveT > mcts;
     const bool trace;
-    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
+    //OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
     //NodeList< MoveT > debug_trees;
 };
 
@@ -178,27 +182,34 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
 {
     MinimaxAlgorithm( GenericRule< MoveT > const& initial_rule, Player player,
                       std::function< double (GenericRule< MoveT >&, Player) > eval,
-                      Recursion< MoveT >& recursion,
+                      Recursion< MoveT >* recursion,
                       std::function< MoveT const& (VertexList< MoveT > const&) > choose_move,
                       bool trace )
-    : ::Algorithm< MoveT >( player, initial_rule ), minimax( initial_rule, eval, recursion ),
-      choose_move( choose_move ), trace( trace )
+    : ::Algorithm< MoveT >( player, initial_rule ), minimax( initial_rule, eval, *recursion ),
+      choose_move( choose_move ), recursion( recursion ), trace( trace )
     {}
 
-    MoveT get_move()
+    std::future< MoveT > get_future()
     {
+        return std::async( 
+            [this]() 
+            { 
+                this->value = minimax( this->player );
+
+                if (minimax.root.children.empty())
+                    throw std::string( "no moves");
+                const MoveT move = choose_move( minimax.root.children );
+                minimax.apply_move( move, this->player );
+
+                return move;
+            });
+
 /*        minimax.debug = [this]( Minimax< MoveT >* minimax )
             {
                 std::cout << "vertice count = " << minimax->vertex_count << std::endl;
                 tree_lens< MoveT >( *minimax->rule,
                     Node< MoveT >( minimax->root ), player );
             };
-*/
-        const double value = minimax( this->player );
-
-        if (minimax.root.children.empty())
-            throw std::string( "no moves");
-        const MoveT move = choose_move( minimax.root.children );
 
         if (trace)
         {
@@ -212,16 +223,12 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
             //PrintTree< MoveT > print_tree(
             //    gv, Node< MoveT >( minimax.root ), minimax.rule, player );
         }
-
-        minimax.apply_move( move, this->player );
-
         if (trace)
         {
             minimax.rule->print_board( out_stream, move );
             std::cout << std::endl << std::endl;
         }
-
-        return move;
+*/
     }
 
     void opponent_move( MoveT const& move )
@@ -231,14 +238,21 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
 
     void reset()
     {
-        minimax.rule->copy_from( this->initial_rule );
+        minimax.rule->copy_from( *this->initial_rule );
         minimax.root = Vertex< MoveT >( MoveT());
+    }
+
+    void stop_impl() 
+    {
+        minimax.stop = true;
     }
 
     Minimax< MoveT > minimax;
     std::function< MoveT const& (VertexList< MoveT > const&) > choose_move;
+    std::unique_ptr< Recursion< MoveT > > recursion;
     const bool trace;
-    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
+    double value = 0.0;
+//    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
 };
 
 template< typename MoveT >
@@ -246,17 +260,25 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
 {
     NegamaxAlgorithm( GenericRule< MoveT > const& initial_rule, Player player, size_t depth,
         ReOrder< MoveT > reorder, std::function< double (GenericRule< MoveT >&, Player) > eval,
-        bool trace )
-    : ::Algorithm< MoveT >( player, initial_rule ), negamax( initial_rule, eval, reorder ), depth( depth ), trace( trace ) {}
+        bool trace ) : 
+        ::Algorithm< MoveT >( player, initial_rule ), negamax( initial_rule, eval, reorder ), depth( depth ), trace( trace ) {}
 
-    MoveT get_move()
+    std::future< MoveT > get_future()
     {
-        const double value = negamax( depth, this->player );
+        return std::async( 
+            [this]() 
+            { 
+                this->value = negamax( depth, this->player );
 
-        assert (!negamax.moves.empty());
-        MoveT const& move = negamax.moves.front();
-        negamax.rule->apply_move( move, this->player );
+                if (negamax.moves.empty())
+                    throw std::string( "no moves");
+                MoveT const& move = negamax.moves.front();
+                negamax.rule->apply_move( move, this->player );
 
+                return move;
+            });
+
+/*
         if (trace)
         {
             std::cout << "player = " << this->player << std::endl
@@ -265,10 +287,7 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
             negamax.rule->print_board( out_stream, move );
             std::cout << std::endl << std::endl;
         }
-
-        acc_nodes = negamax.count;
-
-        return move;
+*/
     }
 
     void opponent_move( MoveT const& move )
@@ -278,19 +297,24 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
 
     void reset()
     {
-        negamax.rule->copy_from( this->initial_rule );
+        negamax.rule->copy_from( *this->initial_rule );
         negamax.moves.clear();
+    }
+
+    void stop_impl() 
+    { 
+        negamax.stop = true; 
     }
 
     Negamax< MoveT > negamax;
     size_t depth;
     const bool trace;
-    size_t acc_nodes = 0;
-    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
+    double value = .0;
+//    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
 };
 
+/*
 template< typename MoveT >
-
 Player game( GenericRule< MoveT >& rule,
              Algorithm< MoveT >& algo1, Algorithm< MoveT >& algo2, Player player )
 {
@@ -378,7 +402,7 @@ void arena( GenericRule< MoveT > const& initial_rule, GenericRule< MoveT >& rule
         else
             ++draws;
 
-        /* debug
+        debug
         //if (winner == player1)
         {
             std::cout << "player " << winner << " won" << std::endl;
@@ -396,7 +420,7 @@ void arena( GenericRule< MoveT > const& initial_rule, GenericRule< MoveT >& rule
 
             break;
         }
-        */
+        
         if (alternate)
             player = Player( -player );
     }
@@ -410,3 +434,5 @@ void arena( GenericRule< MoveT > const& initial_rule, GenericRule< MoveT >& rule
               << algo2.duration.count() / 1000000.0 << std::endl
               << "draws = " << draws << std::endl;
 }
+
+*/
