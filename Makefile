@@ -3,6 +3,10 @@ CC=g++
 # install boost and raylib with homebrew, clone raygui repo in the same directory level as this repo
 HOMEBREW=/opt/homebrew/Cellar
 RAYLIB_PATH=$(HOMEBREW)/raylib/5.0
+# RAYLIB_PATH=../raylib/src
+# use for universal binary
+#UNIVERSAL_FLAGS = -arch arm64 -arch x86_64
+UNIVERSAL_FLAGS=
 BOOST_PATH=$(HOMEBREW)/boost/1.85.0
 INCLUDE=-I$(BOOST_PATH)/include/ -I$(RAYLIB_PATH)/include -isystem../raygui/src
 LINK=-L$(RAYLIB_PATH)/lib -lraylib
@@ -11,7 +15,7 @@ RELEASE=-O3 -DNDEBUG
 # don't forget to clean if you change OPT
 OPT=$(DEBUG)
 #OPT=$(RELEASE)
-FLAGS=-std=c++17 -Wall $(OPT) $(INCLUDE) -c
+FLAGS=-std=c++17 -Wall $(OPT) $(UNIVERSAL_FLAGS) $(INCLUDE) -c
 RULE_DEP=rule.h player.h
 NEGAMAX_DEP=negamax.h $(RULE_DEP)
 MINIMAX_DEP=minimax.h $(RULE_DEP)
@@ -26,7 +30,7 @@ ODIR=obj
 OBJS=$(patsubst %.cpp,$(ODIR)/%.o,$(SOURCES))
 
 minimax: $(OBJS)
-	$(CC) -o $(ODIR)/minimax $(OBJS) $(LINK)
+	$(CC) $(UNIVERSAL_FLAGS) -o $(ODIR)/minimax $(OBJS) $(LINK)
 $(ODIR)/player.o: player.cpp player.h
 	$(CC) $(FLAGS) -o $@ $<
 $(ODIR)/main.o: main.cpp $(META_TIC_TAC_TOE_DEP) $(MONTECARLO_DEP) $(GAME_DEP) $(RAYLIB_DEP)
