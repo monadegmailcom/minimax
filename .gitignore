@@ -3,3 +3,4 @@ obj/
 minimax
 codeviz.*
 .vscode/
+.DS_Store

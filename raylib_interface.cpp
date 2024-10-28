@@ -7,11 +7,16 @@
 static float TextToFloat(const char *text);
 #include "raygui.h"
 
+#include <gvc.h>
+
 #include <iostream>
 #include <string>
 #include <cassert>
 #include <thread>
 #include <future>
+#include <cmath>
+#include <sstream>
+#include <iomanip>
 
 // patch missing definition because RAYGUI_STANDALONE is not defined
 static float TextToFloat(const char *text)
@@ -49,9 +54,10 @@ namespace ttt = tic_tac_toe;
 namespace uttt = meta_tic_tac_toe;
 
 const float board_width = 600;
-const float panel_width = 200;
+float panel_width = 200;
 const float panel_spacer = 10;
-const float panel_x = board_width + panel_spacer;
+float panel_x = board_width + panel_spacer;
+float panel_y = 0;
 const float text_box_height = 30;
 const int window_height = board_width;
 const int window_width = board_width + panel_width;
@@ -252,7 +258,7 @@ struct Spinner
    below it to ensure that it is drawn on top, so we
    save the y position of the dropdown menus in a vector
    and draw them in reverse order. Additionally the gui
-   state of all gui controls except a dropped down menu
+   state of all gui controls below except a dropped down menu
    have to be STATE_DISABLED. */
 struct DropDownMenu
 {
@@ -282,7 +288,7 @@ struct DropDownMenu
         GuiSetState(STATE_NORMAL);
     }
 
-    void add( Menu& menu, float& panel_y )
+    void add( Menu& menu )
     {
         if (menu.dropped_down)
         {
@@ -302,20 +308,20 @@ struct DropDownMenu
 
 vector< pair< Menu*, float > > DropDownMenu::menus = {};
 
-bool show_button( string const& text, float& panel_y)
+bool show_button( const char* text )
 {
     const float height = text_box_height;
     Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
     panel_y += height + panel_spacer;
 
-    return GuiButton( rect, text.c_str());
+    return GuiButton( rect, text );
 }
 
-bool show_button( string const& label, string const& text, float& panel_y)
+bool show_button( const char* label, string const& text )
 {
     const float height = text_box_height + 2 * panel_spacer;
     Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
-    GuiGroupBox( rect, label.c_str());
+    GuiGroupBox( rect, label );
     rect.x += panel_spacer;
     rect.y += panel_spacer;
     rect.width -= 2 * panel_spacer;
@@ -325,17 +331,17 @@ bool show_button( string const& label, string const& text, float& panel_y)
     return GuiButton( rect, text.c_str());
 }
 
-void show_label( string const& label, string const& text, float& panel_y)
+void show_label( const char* label, const char* text )
 {
     Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, text_box_height };
-    GuiGroupBox( rect, label.c_str());
-    rect.x += (panel_width - 2 * panel_spacer - GetTextWidth( text.c_str())) / 2;
-    GuiLabel( rect, text.c_str());
+    GuiGroupBox( rect, label );
+    rect.x += (panel_width - 2 * panel_spacer - GetTextWidth( text )) / 2;
+    GuiLabel( rect, text );
 
     panel_y += text_box_height + panel_spacer;
 }
 
-void show_spinner( Spinner& spinner, float& panel_y)
+void show_spinner( Spinner& spinner )
 {
     const float height = text_box_height + 2 * panel_spacer;
     Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
@@ -350,7 +356,7 @@ void show_spinner( Spinner& spinner, float& panel_y)
         spinner.edit_mode = !spinner.edit_mode;
 }
 
-void show_float_value_box( ValueBoxFloat& value_box, float& panel_y)
+void show_float_value_box( ValueBoxFloat& value_box )
 {
     const float height = text_box_height + 2 * panel_spacer;
     Rectangle rect = { panel_x, panel_y, panel_width - 2 * panel_spacer, height };
@@ -364,6 +370,38 @@ void show_float_value_box( ValueBoxFloat& value_box, float& panel_y)
     if (GuiValueBoxFloat( rect, 0, value_box.text.data(), &value_box.value, value_box.edit_mode))
         value_box.edit_mode = !value_box.edit_mode;
 }
+
+struct Panel
+{
+    Panel( const char* label ) : label( label ) 
+    {
+        panel_y += panel_spacer;
+
+        // adjust x pos and width for the panel
+        panel_x += panel_spacer;
+        panel_width -= 2 * panel_spacer;
+    }
+
+    ~Panel()
+    {
+        // reset x pos and width
+        panel_x -= panel_spacer;
+        panel_width += 2 * panel_spacer;
+
+        const float height = panel_y - y_pos;
+        Rectangle rect = { panel_x, y_pos, panel_width - 2 * panel_spacer, height };
+        GuiGroupBox( rect, label );
+        rect.x += panel_spacer;
+        rect.y += panel_spacer;
+        rect.width -= 2 * panel_spacer;
+        rect.height -= 2 * panel_spacer;
+
+        panel_y += panel_spacer;
+    }
+
+    const char* const label;
+    float y_pos = panel_y;
+};
 
 namespace gui {
 
@@ -421,10 +459,17 @@ struct Player
 
 struct Game 
 {
-    Player player1 = Player( "player1", ::player1 );
-    Player player2 = Player( "player2", ::player2 );
+    Game( string const& player1_name, string const& player2_name ) : 
+        player1( player1_name, ::player1 ), player2( player2_name, ::player2 ) {}
+
+    enum PlayModeIdx { PlayIdx, SingleStepPlayIdx, BatchPlayIdx };
+    Menu play_mode_menu = Menu { "play mode", {"play", "single step play", "batch play"} };
+    bool on_hold = false;
+    Player player1;
+    Player player2;
     Player* current_player = &player1;
     Player* opponent = &player2;
+
     ::Player winner = not_set;
 };
 
@@ -432,7 +477,7 @@ struct Game
 
 enum GameIdx { TicTacToeIdx, UltimateTicTacToeIdx };
 Menu game_menu = Menu { "game", {"tic tac toe", "ultimate tic tac toe"} };
-gui::Game games[2];
+gui::Game games[2] = { gui::Game( "player x", "player o" ), gui::Game( "player x", "player o" )};
 enum UIState { ConfigureGame, PlayGame };
 UIState ui_state = ConfigureGame;
 
@@ -537,6 +582,9 @@ bool process_move( GameGenerics< MoveT >& game_generics )
     if (game.winner != not_set || game_generics.valid_moves.empty())
         return true;
 
+    if (game.current_player->algo_menu.selected != gui::Player::HumanIdx && game.on_hold)
+        return false;
+
     auto current_player_algo = game_generics.player1_algo.get();
     auto opponent_algo = game_generics.player2_algo.get();
     if (game.current_player == &game.player2)
@@ -554,11 +602,24 @@ bool process_move( GameGenerics< MoveT >& game_generics )
 
         game.winner = game_generics.rule.get_winner();
         swap( game.current_player, game.opponent );
+        if (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx)
+            game.on_hold = true;
 
         opponent_algo->opponent_move( *move );
     }
 
     return false;
+}
+
+// return true if the game is finished
+bool process_move()
+{
+    if (game_menu.selected == TicTacToeIdx)
+        return process_move< ttt::Move >( ttt::game_generics );
+    else if (game_menu.selected == UltimateTicTacToeIdx)
+        return process_move< uttt::Move >( uttt::game_generics );
+    else
+        throw runtime_error( "invalid game (PlayGame))");
 }
 
 template <typename MoveT>
@@ -688,77 +749,117 @@ void stop_game( GameGenerics< MoveT >& game_generics )
     games[game_menu.selected].winner = not_set;
 }
 
+void stop_game()
+{
+    if (game_menu.selected == TicTacToeIdx)
+        stop_game( ttt::game_generics );
+    else if (game_menu.selected == UltimateTicTacToeIdx)
+        stop_game( uttt::game_generics );
+    else
+        throw runtime_error( "invalid game (show_button)");
+}
+
+template< typename MoveT >
+void show_generic_game_info( 
+    gui::Player& player, GameGenerics< MoveT >& game_generics, bool game_finished )
+{
+    auto& algo = get_algo( game_generics, player );
+    chrono::microseconds duration = algo->get_duration();
+    
+    gui::Game& game = games[game_menu.selected];
+    if (game.current_player == &player && !game_finished && !game.on_hold)
+        duration += chrono::duration_cast< std::chrono::microseconds >( 
+            chrono::steady_clock::now() - algo->get_start_time());
+
+    show_label( "algorithm", player.algo_menu.items[player.algo_menu.selected].c_str());
+    const ldiv_t min = ldiv( duration.count(), 60 * 1000000);
+    const ldiv_t sec = ldiv( min.rem, 1000000);
+    const long msec = sec.rem / 1000;
+    static ostringstream stream;
+    stream.str( "" );
+    stream << setfill( '0' ) << setw( 2 ) << min.quot << "::" << setw( 2 ) << sec.quot
+            << "." << setw( 3 ) << msec;  
+    show_label( "accumulated time", stream.str().c_str());
+}
+
+void show_game_info( gui::Player& player, bool game_finished )
+{
+    Panel panel( player.name.c_str() );
+    if (game_menu.selected == TicTacToeIdx)
+        show_generic_game_info( player, ttt::game_generics, game_finished );
+    else if (game_menu.selected == UltimateTicTacToeIdx)
+        show_generic_game_info( player, uttt::game_generics, game_finished );
+    else
+        throw runtime_error( "invalid game (show_player_game_info)");
+}
+
 void show_side_panel()
 {
-    float panel_y = panel_spacer;
+    panel_y = panel_spacer;
     gui::Game& game = games[game_menu.selected];
     DropDownMenu dropdown_menu;
 
     if (ui_state == ConfigureGame)
     {
-        show_label( "mode", "configure", panel_y );
-        dropdown_menu.add( game_menu, panel_y );
-        if (show_button( "toggle player", game.current_player->name, panel_y ))
+        show_label( "mode", "configure" );
+        dropdown_menu.add( game_menu );
+        if (show_button( "toggle player", game.current_player->name ))
             swap( game.current_player, game.opponent );
                 
-        dropdown_menu.add( game.current_player->algo_menu, panel_y);
+        dropdown_menu.add( game.current_player->algo_menu );
 
         if (game.current_player->algo_menu.selected == gui::Player::MinimaxIdx)
         {
             if (game_menu.selected == TicTacToeIdx)
-                dropdown_menu.add( game.current_player->minimax.ttt_eval_menu, panel_y );
+                dropdown_menu.add( game.current_player->minimax.ttt_eval_menu );
             else if (game_menu.selected == UltimateTicTacToeIdx)
-                dropdown_menu.add( game.current_player->minimax.uttt_eval_menu, panel_y );
-            dropdown_menu.add( game.current_player->minimax.recursion_menu, panel_y);
-            dropdown_menu.add( game.current_player->minimax.choose_menu, panel_y);
+                dropdown_menu.add( game.current_player->minimax.uttt_eval_menu );
+            dropdown_menu.add( game.current_player->minimax.recursion_menu );
+            dropdown_menu.add( game.current_player->minimax.choose_menu );
             if (game_menu.selected == UltimateTicTacToeIdx)
-                show_float_value_box( game.current_player->minimax.uttt_score_weight, panel_y);
+                show_float_value_box( game.current_player->minimax.uttt_score_weight );
             if (game.current_player->minimax.recursion_menu.selected == gui::Minimax::MaxVerticesIdx)
-                show_spinner( game.current_player->minimax.max_vertices, panel_y);
+                show_spinner( game.current_player->minimax.max_vertices );
             else if (game.current_player->minimax.recursion_menu.selected == gui::Minimax::MaxDepthIdx)
-                show_spinner( game.current_player->minimax.depth, panel_y);
+                show_spinner( game.current_player->minimax.depth );
             if (game.current_player->minimax.choose_menu.selected == gui::Minimax::EpsilonBucketIdx)
-                show_float_value_box( game.current_player->minimax.bucket_width, panel_y);
+                show_float_value_box( game.current_player->minimax.bucket_width );
         }
         else if (game.current_player->algo_menu.selected == gui::Player::NegamaxIdx)
         {
             if (game_menu.selected == TicTacToeIdx)
-                dropdown_menu.add( game.current_player->negamax.ttt_eval_menu, panel_y);
+                dropdown_menu.add( game.current_player->negamax.ttt_eval_menu );
             else if (game_menu.selected == UltimateTicTacToeIdx)
-                dropdown_menu.add( game.current_player->negamax.uttt_eval_menu, panel_y);
-            dropdown_menu.add( game.current_player->negamax.reorder_menu, panel_y);
+                dropdown_menu.add( game.current_player->negamax.uttt_eval_menu );
+            dropdown_menu.add( game.current_player->negamax.reorder_menu );
             if (game_menu.selected == UltimateTicTacToeIdx)
-                show_float_value_box( game.current_player->minimax.uttt_score_weight, panel_y);
-            show_spinner( game.current_player->negamax.depth, panel_y);
+                show_float_value_box( game.current_player->minimax.uttt_score_weight );
+            show_spinner( game.current_player->negamax.depth );
         }
         else if (game.current_player->algo_menu.selected == gui::Player::MontecarloIdx)
         {
-            dropdown_menu.add( game.current_player->montecarlo.choose_menu, panel_y);
-            show_spinner( game.current_player->montecarlo.simulations, panel_y);
-            show_float_value_box( game.current_player->montecarlo.exploration_factor, panel_y);
+            dropdown_menu.add( game.current_player->montecarlo.choose_menu );
+            show_spinner( game.current_player->montecarlo.simulations );
+            show_float_value_box( game.current_player->montecarlo.exploration_factor );
         }
 
-        if (show_button( "start game", panel_y))
+        dropdown_menu.add( game.play_mode_menu );
+
+        if (show_button( "start game" ))
         {
             start_game( game.player1 );
             start_game( game.player2 );
+            game.on_hold = (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx);
 
             ui_state = PlayGame;
         }
     }
     else if (ui_state == PlayGame)
     {
-        bool game_finished = false;
-
-        if (game_menu.selected == TicTacToeIdx)
-            game_finished = process_move< ttt::Move >( ttt::game_generics );
-        else if (game_menu.selected == UltimateTicTacToeIdx)
-            game_finished = process_move< uttt::Move >( uttt::game_generics );
-        else
-            throw runtime_error( "invalid game (PlayGame))");
+        bool game_finished = process_move();
 
         const char* button_text = 0;
-        string status_text;
+        static string status_text;
         if (game.winner == player1)
         {
             status_text = game.player1.name + " wins";
@@ -774,37 +875,40 @@ void show_side_panel()
             status_text = "draw";
             button_text = "back";
         }
-        else if (game.current_player == &game.player1)
+        else
         {
-            status_text = game.player1.name + "'s turn";
-            button_text = "abort game";
-        }
-        else if (game.current_player == &game.player2)
-        {
-            status_text = game.player2.name + "'s turn";
+            status_text = game.current_player->name + "'s turn";
             button_text = "abort game";
         }
 
-        show_label( "mode", "play", panel_y );
-        show_label( 
-            game.player1.name, 
-            game.player1.algo_menu.items[game.player1.algo_menu.selected], panel_y );
-        show_label( 
-            game.player2.name, 
-            game.player2.algo_menu.items[game.player2.algo_menu.selected], panel_y );
-        show_label( "status", status_text.c_str(), panel_y );
-        if (show_button( button_text, panel_y))
+        show_label( "mode", game.play_mode_menu.items[game.play_mode_menu.selected].c_str());
+
+        show_game_info( game.player1, game_finished );
+        show_game_info( game.player2, game_finished );
+
+        show_label( "status", status_text.c_str() );
+
+        if (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx)
         {
-            if (game_menu.selected == TicTacToeIdx)
-                stop_game( ttt::game_generics );
-            else if (game_menu.selected == UltimateTicTacToeIdx)
-                stop_game( uttt::game_generics );
-            else
-                throw runtime_error( "invalid game (show_button)");
+            if (!game.on_hold || game.current_player->algo_menu.selected == gui::Player::HumanIdx)
+                GuiSetState(STATE_DISABLED);
+
+            if (show_button( "next move" ))
+                game.on_hold = false;
+
+            GuiSetState(STATE_NORMAL);
+        }
+        // TODO: batch mode not yet implemented
+        else if (game.play_mode_menu.selected == gui::Game::BatchPlayIdx)
+        {}
+
+        if (show_button( button_text))
+        {
+            stop_game();
 
             if (game.current_player != &game.player1)
                 swap( game.current_player, game.opponent );
-
+            
             ui_state = ConfigureGame;
         }
     }
@@ -832,7 +936,7 @@ void show_board()
                     get_algo( ttt::game_generics, *game.current_player).get());
                 if (!algo)
                     throw runtime_error( "invalid interactive ttt algorithm");
-                algo->move_promise.set_value( *move );
+                algo->set_move( *move );
             }
         }
         else if (ui_state == ConfigureGame)
@@ -879,7 +983,7 @@ void show_board()
                     get_algo( uttt::game_generics, *game.current_player).get());
                 if (!algo)
                     throw runtime_error( "invalid interactive uttt algorithm");
-                algo->move_promise.set_value( *move );
+                algo->set_move( *move );
             }
         }
         else if (ui_state == ConfigureGame)

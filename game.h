@@ -16,42 +16,95 @@ struct Statistic
     size_t losses;
 };
 
-template< typename MoveT >
-struct Algorithm
+// TODO: do i need this?
+class AccumulateDuration
 {
-    Algorithm( Player player, GenericRule< MoveT > const& initial_rule ) 
-    : player( player ), initial_rule( initial_rule.clone()) {}
+public:
+    AccumulateDuration( std::chrono::microseconds& duration) : 
+        start( std::chrono::steady_clock::now()), duration( duration ) {}
 
-    std::chrono::microseconds duration { 0 };
-    const Player player;
-    std::unique_ptr< GenericRule< MoveT > > initial_rule;
-    std::future< MoveT > move_future;
+    ~AccumulateDuration()
+    { 
+        duration += std::chrono::duration_cast< std::chrono::microseconds >( 
+            std::chrono::steady_clock::now() - start );
+    }
+private:
+    std::chrono::time_point< std::chrono::steady_clock > start;
+    std::chrono::microseconds& duration;
+};
+
+template< typename MoveT >
+class Algorithm
+{
+public:
+    Algorithm( Player player, GenericRule< MoveT > const& initial_rule ) : 
+        initial_rule( initial_rule.clone()), player( player ) {}
+
+    virtual ~Algorithm() {}
 
     std::optional< MoveT > get_move()
     {
         if (!move_future.valid())
+        {
             // after the assignment the future is valid
             move_future = get_future();
 
+            start = std::chrono::steady_clock::now(); 
+        }
+
         // we are polling for the player to make a move
         if (move_future.wait_for( std::chrono::milliseconds( 0 )) == std::future_status::ready)
+        {
+            duration += std::chrono::duration_cast< std::chrono::microseconds >( 
+                std::chrono::steady_clock::now() - start );
+
             // this sets the future to invalid state
             return move_future.get();
+        }
         else            
             return {};
+    }
+
+    void opponent_move( MoveT const& move ) 
+    {
+        opp_move = move;
     }
 
     void stop() 
     { 
         stop_impl(); 
+
         // wait for the future to finish
         if (move_future.valid())
             move_future.wait();
     }
 
-    virtual ~Algorithm() {}
-    virtual void opponent_move( MoveT const& ) = 0;
-    virtual void reset() = 0;
+    void reset()
+    {
+        reset_impl();
+        duration = 0;
+        opp_move.reset();
+    }
+
+    std::chrono::microseconds get_duration() const
+    {
+        return duration;
+    }
+
+    std::chrono::time_point< std::chrono::steady_clock > get_start_time() const
+    {
+        return start;
+    }
+private:
+    std::chrono::microseconds duration { 0 };
+    std::chrono::time_point< std::chrono::steady_clock > start;
+protected:
+    std::optional< MoveT > opp_move;
+    std::future< MoveT > move_future;
+    std::unique_ptr< GenericRule< MoveT > > initial_rule;
+    const Player player;
+
+    virtual void reset_impl() = 0;
     virtual void stop_impl() = 0;
     virtual std::future< MoveT > get_future() = 0;
 };
@@ -59,16 +112,19 @@ struct Algorithm
 namespace interactive {
 
 template< typename MoveT >
-struct Algorithm : public ::Algorithm< MoveT >
+class Algorithm : public ::Algorithm< MoveT >
 {
+public:
     Algorithm( GenericRule< MoveT > const& initial_rule, Player player ) 
     : ::Algorithm< MoveT >( player, initial_rule ) {}
 
-    void opponent_move( MoveT const& move ) 
-    {}
-
-    void reset() 
-    {}
+    void set_move( MoveT const& move )
+    {
+        if (this->move_future.valid())
+            this->move_promise.set_value( move );
+    }
+private:
+    void reset_impl() {}
 
     std::future< MoveT > get_future()
     {
@@ -79,8 +135,7 @@ struct Algorithm : public ::Algorithm< MoveT >
     void stop_impl() 
     {
         // set some move to set future status to ready, the move will not be used
-        if (this->move_future.valid())
-            move_promise.set_value( MoveT());
+        set_move( MoveT());
     }
 
     std::promise< MoveT > move_promise;
@@ -109,14 +164,16 @@ struct ChooseBest : public ChooseMove< MoveT >
 };
 
 template< typename MoveT >
-struct Algorithm : public ::Algorithm< MoveT >
+class Algorithm : public ::Algorithm< MoveT >
 {
+public:
     Algorithm( GenericRule< MoveT > const& initial_rule, Player player, ChooseMove< MoveT >* choose_move, 
                size_t simulations, double exploration, bool trace ) :
         ::Algorithm< MoveT >( player, initial_rule ), choose_move( choose_move ), simulations( simulations ),
         mcts( initial_rule, exploration ), trace( trace ) 
-        {}
+    {}
 
+private:
     std::future< MoveT > get_future()
     {
 //        mcts.debug = [this]( MCTS< MoveT >* mcts )
@@ -133,7 +190,10 @@ struct Algorithm : public ::Algorithm< MoveT >
         }*/
         return std::async( 
             [this]() 
-            { 
+            {                 
+                if (this->opp_move)
+                    mcts.apply_move( *this->opp_move, Player( -this->player ));
+
                 mcts( simulations, this->player );
                 const MoveT move = (*choose_move)( mcts.root.children).move;
                 mcts.apply_move( move, this->player );
@@ -151,12 +211,7 @@ struct Algorithm : public ::Algorithm< MoveT >
         //debug_trees.emplace_back( mcts.root );
     }
 
-    void opponent_move( MoveT const& move )
-    {
-        mcts.apply_move( move, Player( -this->player ));
-    }
-
-    void reset()
+    void reset_impl()
     {
         mcts.init( *this->initial_rule );
      //   debug_trees.clear();
@@ -178,22 +233,26 @@ struct Algorithm : public ::Algorithm< MoveT >
 } // namespace montecarlo {
 
 template< typename MoveT >
-struct MinimaxAlgorithm : public Algorithm< MoveT >
+class MinimaxAlgorithm : public Algorithm< MoveT >
 {
+public:
     MinimaxAlgorithm( GenericRule< MoveT > const& initial_rule, Player player,
                       std::function< double (GenericRule< MoveT >&, Player) > eval,
                       Recursion< MoveT >* recursion,
                       std::function< MoveT const& (VertexList< MoveT > const&) > choose_move,
-                      bool trace )
-    : ::Algorithm< MoveT >( player, initial_rule ), minimax( initial_rule, eval, *recursion ),
-      choose_move( choose_move ), recursion( recursion ), trace( trace )
+                      bool trace ) : 
+        ::Algorithm< MoveT >( player, initial_rule ), minimax( initial_rule, eval, *recursion ),
+        choose_move( choose_move ), recursion( recursion ), trace( trace )
     {}
-
+private:
     std::future< MoveT > get_future()
     {
         return std::async( 
             [this]() 
             { 
+                if (this->opp_move)
+                    minimax.rule->apply_move( *this->opp_move, Player( -this->player ));
+
                 this->value = minimax( this->player );
 
                 if (minimax.root.children.empty())
@@ -231,12 +290,7 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
 */
     }
 
-    void opponent_move( MoveT const& move )
-    {
-        minimax.apply_move( move, Player( -this->player ));
-    }
-
-    void reset()
+    void reset_impl()
     {
         minimax.rule->copy_from( *this->initial_rule );
         minimax.root = Vertex< MoveT >( MoveT());
@@ -256,18 +310,22 @@ struct MinimaxAlgorithm : public Algorithm< MoveT >
 };
 
 template< typename MoveT >
-struct NegamaxAlgorithm : public Algorithm< MoveT >
+class NegamaxAlgorithm : public Algorithm< MoveT >
 {
+public:
     NegamaxAlgorithm( GenericRule< MoveT > const& initial_rule, Player player, size_t depth,
         ReOrder< MoveT > reorder, std::function< double (GenericRule< MoveT >&, Player) > eval,
         bool trace ) : 
         ::Algorithm< MoveT >( player, initial_rule ), negamax( initial_rule, eval, reorder ), depth( depth ), trace( trace ) {}
-
+private:
     std::future< MoveT > get_future()
     {
         return std::async( 
             [this]() 
             { 
+                if (this->opp_move)
+                    negamax.rule->apply_move( *this->opp_move, Player( -this->player ));
+
                 this->value = negamax( depth, this->player );
 
                 if (negamax.moves.empty())
@@ -290,12 +348,7 @@ struct NegamaxAlgorithm : public Algorithm< MoveT >
 */
     }
 
-    void opponent_move( MoveT const& move )
-    {
-        negamax.rule->apply_move( move, Player( -this->player ));
-    }
-
-    void reset()
+    void reset_impl()
     {
         negamax.rule->copy_from( *this->initial_rule );
         negamax.moves.clear();
