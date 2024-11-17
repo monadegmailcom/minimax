@@ -1,4 +1,6 @@
-#include "tree.h"
+#include "negamax.h"
+#include "minimax.h"
+#include "montecarlo.h"
 
 #include <iostream>
 #include <chrono>
@@ -65,6 +67,12 @@ public:
             return {};
     }
 
+    // we like to be able to inspect the game tree before applying the move
+    void apply_move( MoveT const& move )
+    {
+        next_move = move;
+    }
+
     void opponent_move( MoveT const& move ) 
     {
         opp_move = move;
@@ -100,6 +108,7 @@ private:
     std::chrono::time_point< std::chrono::steady_clock > start;
 protected:
     std::optional< MoveT > opp_move;
+    std::optional< MoveT > next_move;
     std::future< MoveT > move_future;
     std::unique_ptr< GenericRule< MoveT > > initial_rule;
     const Player player;
@@ -173,48 +182,34 @@ public:
         mcts( initial_rule, exploration ), trace( trace ) 
     {}
 
+    Node< MoveT > const& get_root()
+    {
+        return mcts.root;
+    }
+
+    MCTS< MoveT >& get_mcts()
+    {
+        return mcts;
+    }
 private:
     std::future< MoveT > get_future()
     {
-//        mcts.debug = [this]( MCTS< MoveT >* mcts )
-  /*      if (trace)
-        {
-            montecarlo::tree::lens( *mcts.rule, mcts.root, mcts.exploration, player );
-        };
-*/
-        /* debug
-        {
-            montecarlo::MCTS< MoveT >& mcts = dynamic_cast< montecarlo::Algorithm< MoveT >& >( *this ).mcts;
-            montecarlo::tree::PrintTree< MoveT > print( gv_before, mcts.root, mcts.exploration, *mcts.rule, player, Circular );
-            montecarlo::tree::PrintTree< MoveT > print2( gv2_before, mcts.root, mcts.exploration, *mcts.rule, player, Circular, Stats );
-        }*/
         return std::async( 
             [this]() 
-            {                 
+            {      
+                if (this->next_move)
+                    mcts.apply_move( *this->next_move, this->player );           
                 if (this->opp_move)
                     mcts.apply_move( *this->opp_move, Player( -this->player ));
 
                 mcts( simulations, this->player );
-                const MoveT move = (*choose_move)( mcts.root.children).move;
-                mcts.apply_move( move, this->player );
-                return move; 
+                return (*choose_move)( mcts.root.children).move;
             });
-       
-        //if (trace)
-        //    montecarlo::tree::lens( *mcts.rule, mcts.root, mcts.exploration, this->player );
-
-        // debug
-        //montecarlo::MCTS< MoveT >& mcts = dynamic_cast< montecarlo::Algorithm< MoveT >& >( *this ).mcts;
-        //debug_trees.emplace_back( mcts.root );
-
-        // debug
-        //debug_trees.emplace_back( mcts.root );
     }
 
     void reset_impl()
     {
         mcts.init( *this->initial_rule );
-     //   debug_trees.clear();
     }
 
     void stop_impl() 
@@ -226,8 +221,6 @@ private:
     size_t simulations;
     MCTS< MoveT > mcts;
     const bool trace;
-    //OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
-    //NodeList< MoveT > debug_trees;
 };
 
 } // namespace montecarlo {
@@ -250,6 +243,8 @@ private:
         return std::async( 
             [this]() 
             { 
+                if (this->next_move)
+                    minimax.rule->apply_move( *this->next_move, this->player );           
                 if (this->opp_move)
                     minimax.rule->apply_move( *this->opp_move, Player( -this->player ));
 
@@ -257,37 +252,8 @@ private:
 
                 if (minimax.root.children.empty())
                     throw std::string( "no moves");
-                const MoveT move = choose_move( minimax.root.children );
-                minimax.apply_move( move, this->player );
-
-                return move;
+                return choose_move( minimax.root.children );
             });
-
-/*        minimax.debug = [this]( Minimax< MoveT >* minimax )
-            {
-                std::cout << "vertice count = " << minimax->vertex_count << std::endl;
-                tree_lens< MoveT >( *minimax->rule,
-                    Node< MoveT >( minimax->root ), player );
-            };
-
-        if (trace)
-        {
-            std::cout << "player = " << this->player << std::endl
-                      << "recursion count = " << minimax.rec_count << std::endl
-                      << "vertex count = " << minimax.vertex_count << std::endl
-                      << "move = " << int( move ) << std::endl
-                      << "value = " << value << std::endl << std::endl;
-            tree_lens( *minimax.rule, Node< MoveT >( minimax.root ), this->player );
-            //std::ofstream gv( "tree.gv", std::ios::app );
-            //PrintTree< MoveT > print_tree(
-            //    gv, Node< MoveT >( minimax.root ), minimax.rule, player );
-        }
-        if (trace)
-        {
-            minimax.rule->print_board( out_stream, move );
-            std::cout << std::endl << std::endl;
-        }
-*/
     }
 
     void reset_impl()
@@ -306,7 +272,6 @@ private:
     std::unique_ptr< Recursion< MoveT > > recursion;
     const bool trace;
     double value = 0.0;
-//    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
 };
 
 template< typename MoveT >
@@ -323,6 +288,8 @@ private:
         return std::async( 
             [this]() 
             { 
+                if (this->next_move)
+                    negamax.rule->apply_move( *this->next_move, this->player );           
                 if (this->opp_move)
                     negamax.rule->apply_move( *this->opp_move, Player( -this->player ));
 
@@ -330,22 +297,8 @@ private:
 
                 if (negamax.moves.empty())
                     throw std::string( "no moves");
-                MoveT const& move = negamax.moves.front();
-                negamax.rule->apply_move( move, this->player );
-
-                return move;
+                return negamax.moves.front();
             });
-
-/*
-        if (trace)
-        {
-            std::cout << "player = " << this->player << std::endl
-                      << "recursions = " << negamax.count - acc_nodes << std::endl
-                      << "value = " << value << std::endl << std::endl;
-            negamax.rule->print_board( out_stream, move );
-            std::cout << std::endl << std::endl;
-        }
-*/
     }
 
     void reset_impl()
@@ -363,7 +316,6 @@ private:
     size_t depth;
     const bool trace;
     double value = .0;
-//    OutStream out_stream {std::cout, "\e[1m", "\e[0m", "\n", " " };
 };
 
 /*

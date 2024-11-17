@@ -1,13 +1,12 @@
 #include "meta_tic_tac_toe.h"
 #include "game.h"
+#include "tree.h"
 
 // for some reasons this has to be defined
 #define RAYGUI_IMPLEMENTATION
 // patch missing declaration because RAYGUI_STANDALONE is not defined
 static float TextToFloat(const char *text);
 #include "raygui.h"
-
-#include <gvc.h>
 
 #include <iostream>
 #include <string>
@@ -53,14 +52,14 @@ using namespace placeholders;
 namespace ttt = tic_tac_toe;
 namespace uttt = meta_tic_tac_toe;
 
-const float board_width = 600;
-float panel_width = 200;
+float board_width = 600;
 const float panel_spacer = 10;
+float panel_width = 200;
 float panel_x = board_width + panel_spacer;
 float panel_y = 0;
 const float text_box_height = 30;
-const int window_height = board_width;
-const int window_width = board_width + panel_width;
+float window_height = board_width;
+float window_width = board_width + panel_width;
 
 void draw_player(
     Player player, int i, int j, Color color, float cell_size, float pos_x = 0, float pos_y = 0)
@@ -140,13 +139,13 @@ struct GameGenerics
 
 namespace tic_tac_toe {
 
-const float cell_size = board_width / 3;
 DeepRule rule;
 DeepRule initial_rule;
 GameGenerics< ttt::Move > game_generics { rule, initial_rule };
 
 void draw_board( Player* board, optional< Move > const& last_move )
 {
+    const float cell_size = board_width / 3;
     for (int i = 0; i < n; i++)
         for (int j = 0; j < n; j++)
         {
@@ -167,8 +166,6 @@ Move cell_indices_to_move( pair< int, int > const& cell_indices )
 
 namespace meta_tic_tac_toe {
 
-const float outer_cell_size = board_width / 3;
-const float inner_cell_size = outer_cell_size / 3;
 Rule rule;
 Rule initial_rule;
 
@@ -176,6 +173,8 @@ GameGenerics< uttt::Move > game_generics { rule, initial_rule };
 
 void draw_board( Rule const& rule, optional< Move > const& last_move )
 {
+    const float outer_cell_size = board_width / 3;
+    const float inner_cell_size = outer_cell_size / 3;
     int idx = 0;
     for (int i = 0; i < n; i++)
         for (int j = 0; j < n; j++)
@@ -405,6 +404,97 @@ struct Panel
 
 namespace gui {
 
+class RaylibTexture
+{
+private:
+    Texture2D texture;
+    RsvgHandle* handle = nullptr;
+    double svg_width;
+    double svg_height;
+    double prev_width = 0.0;
+    double prev_height = 0.0;
+    double prev_shift_x = 0.0;
+    double prev_shift_y = 0.0;
+    double prev_zoom = 1.0;
+public:
+    RaylibTexture( char* svgData, unsigned dataSize )
+    {
+        GError* error = NULL;
+        handle = rsvg_handle_new_from_data((const guint8*)svgData, dataSize, &error);
+        if (!handle) 
+        {
+            ostringstream oss;
+            oss << "Failed to load SVG data: " << error->message;
+            g_error_free(error);
+            throw runtime_error( oss.str());
+        }
+        rsvg_handle_get_intrinsic_size_in_pixels( handle, &svg_width, &svg_height );
+    }
+
+    ~RaylibTexture()
+    {
+        g_object_unref(handle);
+        UnloadTexture( texture );
+    }
+
+    Texture2D& get_texture() { return texture; }
+
+    void updateTexture( 
+        double width, double height, double shift_x, double shift_y, double zoom )
+    {
+        if (width == prev_width && height == prev_height && 
+            shift_x == prev_shift_x && shift_y == prev_shift_y && 
+            zoom == prev_zoom)
+            return;
+
+        prev_width = width;
+        prev_height = height;
+        prev_shift_x = shift_x;
+        prev_shift_y = shift_y;
+        prev_zoom = zoom;
+
+        // Create a Cairo surface to render the SVG
+        cairo_surface_t* surface = cairo_image_surface_create( CAIRO_FORMAT_ARGB32, width, height);
+        cairo_t* cr = cairo_create(surface);
+
+        RsvgRectangle viewport;
+        viewport.x = 0; //(svg_width * zoom) / 2 + shift_x * zoom;
+        viewport.y = 0; //(svg_height * zoom) / 2 + shift_y * zoom;
+        viewport.width = width; // svg_width * zoom;
+        viewport.height = height; // svg_height * zoom;
+
+        //cairo_translate(cr, -(svg_width + shift_x) / 2 * zoom, -(svg_height + shift_y) / 2 * zoom);
+        cairo_translate(cr, width / 2.0, height / 2.0);
+        cairo_scale(cr, zoom, zoom);
+
+        cairo_translate(cr, shift_x -width / 2.0, shift_y -height / 2.0);
+
+        GError* error = NULL;
+        if (!rsvg_handle_render_document(handle, cr, &viewport, &error ))
+        {
+            ostringstream oss;
+            oss << "Failed to render SVG data: " << error->message;
+            g_error_free(error);
+            cairo_destroy(cr);
+            cairo_surface_destroy(surface);
+            throw runtime_error( oss.str());
+        }
+
+        Image image = {
+            .data = cairo_image_surface_get_data(surface),
+            .width = cairo_image_surface_get_width(surface),
+            .height = cairo_image_surface_get_height(surface),
+            .mipmaps = 1,
+            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+        };
+
+        texture = LoadTextureFromImage(image);
+
+        cairo_destroy(cr);
+        cairo_surface_destroy(surface);
+    }
+};
+
 struct Human
 {};
 
@@ -440,7 +530,8 @@ struct Montecarlo
 {
     enum ChooseIdx { BestIdx };
     Menu choose_menu = Menu {"choose", {"best"}};
-    Spinner simulations = Spinner( "simulations", 80000, 1, 1000000 );
+    Spinner simulations = Spinner( "simulations", 20, 1, 1000000 );
+//    Spinner simulations = Spinner( "simulations", 80000, 1, 1000000 );
     ValueBoxFloat exploration_factor = ValueBoxFloat( "exploration factor", "0.40" );
 };
 
@@ -451,6 +542,9 @@ struct Player
     ::Player player;
     enum AlgoIdx { HumanIdx, NegamaxIdx, MinimaxIdx, MontecarloIdx };
     Menu algo_menu = Menu { "algorithm", {"human", "negamax", "minimax", "montecarlo"} };
+
+    unique_ptr< RaylibTexture > tree_texture;
+    unique_ptr< GraphvizTree > graphviz_tree;
 
     Negamax negamax;
     Minimax minimax;
@@ -465,6 +559,10 @@ struct Game
     enum PlayModeIdx { PlayIdx, SingleStepPlayIdx, BatchPlayIdx };
     Menu play_mode_menu = Menu { "play mode", {"play", "single step play", "batch play"} };
     bool on_hold = false;
+
+    enum ShowIdx { BoardIdx, TreeIdx };
+    Menu show_menu = Menu { "show", {"board", "tree"} };
+
     Player player1;
     Player player2;
     Player* current_player = &player1;
@@ -475,11 +573,21 @@ struct Game
 
 } // namespace gui {
 
+struct ShiftAndScale
+{
+    Vector2 position = { 0.0f, 0.0f };
+    float scale = 1.0f;
+    Vector2 last_mouse_position = { 0.0f, 0.0f };
+    bool dragging = false;
+};
+
 enum GameIdx { TicTacToeIdx, UltimateTicTacToeIdx };
 Menu game_menu = Menu { "game", {"tic tac toe", "ultimate tic tac toe"} };
 gui::Game games[2] = { gui::Game( "player x", "player o" ), gui::Game( "player x", "player o" )};
 enum UIState { ConfigureGame, PlayGame };
 UIState ui_state = ConfigureGame;
+GVC_t* gv_gvc = nullptr;
+ShiftAndScale shift_and_scale;
 
 optional< uint8_t > handle_board_event( 
     ::Player const* board, vector< uint8_t > const& valid_moves, ::Player player, Convert convert, int number_of_cells )  
@@ -574,6 +682,18 @@ montecarlo::ChooseMove< MoveT >* make_mc_choose_move_function( int idx )
         throw runtime_error( "invalid montecarlo choose move function");
 }
 
+template< typename MoveT >
+void build_mc_tree( GameGenerics< MoveT >& game_generics, gui::Player& player )
+{
+    auto algo = dynamic_cast< montecarlo::Algorithm< MoveT >* >( 
+        get_algo( game_generics, player).get());
+    auto& root_node = algo->get_root();
+    player.graphviz_tree = montecarlo::build_tree(
+        gv_gvc, game_generics.rule, player.player, algo->get_mcts().exploration, root_node );
+    auto p = player.graphviz_tree->render( Stats, Circular);
+    player.tree_texture = make_unique< gui::RaylibTexture >( p.first, p.second );
+}
+
 // return true if the game is finished
 template< typename MoveT >
 bool process_move( GameGenerics< MoveT >& game_generics )
@@ -582,7 +702,7 @@ bool process_move( GameGenerics< MoveT >& game_generics )
     if (game.winner != not_set || game_generics.valid_moves.empty())
         return true;
 
-    if (game.current_player->algo_menu.selected != gui::Player::HumanIdx && game.on_hold)
+    if (game.on_hold)
         return false;
 
     auto current_player_algo = game_generics.player1_algo.get();
@@ -596,16 +716,24 @@ bool process_move( GameGenerics< MoveT >& game_generics )
     optional< MoveT > move = current_player_algo->get_move();
     if (move)
     {
+        if (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx)
+        {
+            if (game.opponent->algo_menu.selected != gui::Player::HumanIdx)
+                game.on_hold = true;
+
+            if (game.current_player->algo_menu.selected != gui::Player::HumanIdx)
+                build_mc_tree( game_generics, *game.current_player );
+        }
+        
         game_generics.last_move = move;
         game_generics.rule.apply_move( *move, game.current_player->player );
         game_generics.valid_moves = game_generics.rule.generate_moves();
 
+        current_player_algo->apply_move( *move );
+        opponent_algo->opponent_move( *move );
+
         game.winner = game_generics.rule.get_winner();
         swap( game.current_player, game.opponent );
-        if (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx)
-            game.on_hold = true;
-
-        opponent_algo->opponent_move( *move );
     }
 
     return false;
@@ -774,11 +902,11 @@ void show_generic_game_info(
     show_label( "algorithm", player.algo_menu.items[player.algo_menu.selected].c_str());
     const ldiv_t min = ldiv( duration.count(), 60 * 1000000);
     const ldiv_t sec = ldiv( min.rem, 1000000);
-    const long msec = sec.rem / 1000;
+    const long dsec = sec.rem / 100000;
     static ostringstream stream;
     stream.str( "" );
-    stream << setfill( '0' ) << setw( 2 ) << min.quot << "::" << setw( 2 ) << sec.quot
-            << "." << setw( 3 ) << msec;  
+    stream << setfill( '0' ) << setw( 2 ) << min.quot << ":" << setw( 2 ) << sec.quot
+            << "." << setw( 1 ) << dsec;  
     show_label( "accumulated time", stream.str().c_str());
 }
 
@@ -849,7 +977,8 @@ void show_side_panel()
         {
             start_game( game.player1 );
             start_game( game.player2 );
-            game.on_hold = (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx);
+            game.on_hold = (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx
+                            && game.current_player->algo_menu.selected != gui::Player::HumanIdx);
 
             ui_state = PlayGame;
         }
@@ -890,7 +1019,9 @@ void show_side_panel()
 
         if (game.play_mode_menu.selected == gui::Game::SingleStepPlayIdx)
         {
-            if (!game.on_hold || game.current_player->algo_menu.selected == gui::Player::HumanIdx)
+            dropdown_menu.add( game.show_menu );
+
+            if (!game.on_hold)
                 GuiSetState(STATE_DISABLED);
 
             if (show_button( "next move" ))
@@ -906,9 +1037,16 @@ void show_side_panel()
         {
             stop_game();
 
+            // reset current player to player1
             if (game.current_player != &game.player1)
                 swap( game.current_player, game.opponent );
-            
+
+            // unload textures
+            game.player1.tree_texture.reset();
+            game.player2.tree_texture.reset();
+
+            shift_and_scale = ShiftAndScale();
+
             ui_state = ConfigureGame;
         }
     }
@@ -971,7 +1109,8 @@ void show_board()
             {
                 div_t d = div( move, n * n);
                 div_t ij = div( d.quot, n );
-                draw_box( ij.quot, ij.rem, RED, outer_cell_size, 0, 0, 2 );
+
+                draw_box( ij.quot, ij.rem, RED, board_width / 3, 0, 0, 2 );
             }
 
             optional< Move > move = handle_board_event( 
@@ -1005,6 +1144,67 @@ void show_board()
         assert (false);
 }
 
+void show_graph()
+{
+    gui::Game& game = games[game_menu.selected];
+    gui::Player& player = *game.opponent;
+    if (!player.tree_texture)
+    {        
+        if (player.algo_menu.selected == gui::Player::MontecarloIdx)
+        {
+            if (game_menu.selected == TicTacToeIdx)
+                build_mc_tree( ttt::game_generics, player );
+            else if (game_menu.selected == UltimateTicTacToeIdx)
+                build_mc_tree( uttt::game_generics, player );
+            else
+                throw runtime_error( "invalid game (show_graph)");
+        }
+        else
+        {
+            //TODO: no trees yet
+        }
+    }
+    if (player.tree_texture)
+    {
+        const float window_height = GetScreenHeight();
+        const float window_width = GetScreenWidth();
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) 
+        {
+            shift_and_scale.last_mouse_position = GetMousePosition();
+            
+            if (CheckCollisionPointRec( 
+                shift_and_scale.last_mouse_position, 
+                {0, 0, window_width, window_height}))
+                shift_and_scale.dragging = true;
+        }
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+            shift_and_scale.dragging = false;
+        }
+        if (shift_and_scale.dragging) {
+            const Vector2 current_mouse_position = GetMousePosition();
+            const Vector2 delta = {current_mouse_position.x - shift_and_scale.last_mouse_position.x,
+                             current_mouse_position.y - shift_and_scale.last_mouse_position.y };
+            shift_and_scale.position.x += delta.x;
+            shift_and_scale.position.y += delta.y;
+            shift_and_scale.last_mouse_position = current_mouse_position;
+        }
+
+        const float wheel = GetMouseWheelMove();
+        if (wheel != 0) 
+        {
+            shift_and_scale.scale += wheel * 0.05f;
+            // Prevent zooming out too much
+            if (shift_and_scale.scale < 0.1f) 
+                shift_and_scale.scale = 0.1f; 
+        }
+
+        player.tree_texture->updateTexture( 
+            board_width, board_width, shift_and_scale.position.x, shift_and_scale.position.y, shift_and_scale.scale);
+
+        DrawTexture( player.tree_texture->get_texture(), 0, 0, RAYWHITE);
+    }
+}
+
 struct RaylibRender
 {
     RaylibRender()
@@ -1023,8 +1223,12 @@ struct RaylibInit
 {
     RaylibInit()
     {
-        InitWindow(window_width, window_height, "(ultimate) tic tac toe");
+        SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+
+        InitWindow( window_width, window_height, "(ultimate) tic tac toe");
+        SetWindowMinSize( window_width, window_height );
         SetTargetFPS(10);
+        SetTraceLogLevel( LOG_WARNING );
     }
 
     ~RaylibInit()
@@ -1033,19 +1237,54 @@ struct RaylibInit
     }
 };
 
+void handleWindowResize()
+{
+    const float height = GetScreenHeight();
+    const float width = GetScreenWidth();
+
+    if (height != window_height)
+    {
+        window_height = height;
+        window_width = height + panel_width;
+    }
+    else if (width != window_width)
+    {
+        window_width = width;
+        window_height = width - panel_width;
+    }
+    else 
+        return;
+
+    SetWindowSize( window_width, window_height );
+    board_width = window_height;
+    panel_x = board_width + panel_spacer;
+}
+
 namespace gui {
 
 void show()
 {
+    gv_gvc = gvContext();
+    
     RaylibInit raylib_init;
 
     while (!WindowShouldClose())
     {
         RaylibRender raylib_render;
+        handleWindowResize();
+
+        gui::Game& game = games[game_menu.selected];
+        if (   ui_state == ConfigureGame
+            || game.opponent->algo_menu.selected == gui::Player::HumanIdx 
+            || game.show_menu.selected == gui::Game::BoardIdx)
+            show_board();
+        else if (game.show_menu.selected == gui::Game::TreeIdx)
+            show_graph();
 
         show_side_panel();
-        show_board();
     }
+
+    gvFreeContext(gv_gvc);
 }
 
 } // namespace gui {

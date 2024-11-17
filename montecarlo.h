@@ -1,3 +1,5 @@
+#pragma once
+
 #include "rule.h"
 
 #include <boost/pool/pool_alloc.hpp>
@@ -134,8 +136,6 @@ struct MCTS
                         node.children.emplace_back( move );
             
                     winner = playout( moves, player );
-                    // debug
-                    //std::cout << "winner of move " << int( node.move ) << " = " << winner << std::endl;
                 }
             }
         }
@@ -165,7 +165,6 @@ struct MCTS
             if (stop)
                 return;
             simulate( root, player );
-            //debug( this );
         }
     }
 

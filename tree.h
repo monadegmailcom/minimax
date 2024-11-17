@@ -2,6 +2,9 @@
 #include "minimax.h"
 #include "montecarlo.h"
 
+#include <graphviz/gvc.h>
+#include <librsvg/rsvg.h>
+
 #include <vector>
 #include <iostream>
 #include <fstream>
@@ -9,9 +12,7 @@
 #include <limits>
 #include <iomanip>
 #include <cassert>
-
-enum TreeType { Hierarchie = 1, Circular = -1};
-
+/* 
 void print_preamble( std::ostream&, TreeType );
 void print_closing( std::ostream& );
 
@@ -197,35 +198,104 @@ void tree_lens( GenericRule< MoveT > const& initial_rule,
         }
     }
 }
+ */
+
+
+enum DisplayNode { Board, SingleMove, Stats };
+enum Layout { Hierarchie, Circular };
+
+class GraphvizTree
+{
+public:
+    GraphvizTree( GVC_t* gv_gvc, Player player );
+
+    virtual ~GraphvizTree();
+
+    virtual void set_node_attribute( Agnode_t* gv_node ) = 0;
+
+    std::pair< char*, unsigned > render( DisplayNode _display_node, Layout layout );
+    Agraph_t* get_graph() { return gv_graph; }
+protected:
+    std::ostringstream value; // reuse allocated memory
+    DisplayNode display_node = Stats;
+    Agraph_t* gv_graph = nullptr;
+private:
+    GVC_t* gv_gvc = nullptr;
+};
 
 namespace montecarlo
 {
 
-namespace tree {
-
-template< typename MoveT >
-struct Node
+class Tree : public GraphvizTree
 {
-    Node( montecarlo::Node< MoveT > const& node ) : size( 1 ), node( node ), depth( 1 )
-    {
-        for (montecarlo::Node< MoveT > const& child_node : node.children)
-        {
-            children.emplace_back( child_node );
-            Node const& child = children.back();
-            size += child.size;
-            if (child.depth > depth)
-                depth = child.depth;
-        }
-        if (!children.empty())
-            ++depth;
-    }
-    std::list< Node > children;
+public:
+    Tree( GVC_t* gv_gvc, Player player, float exploration );
 
-    size_t size;
-    montecarlo::Node< MoveT > const& node;
-    size_t depth;
+    struct Data
+    {
+        Agrec_t h;
+        size_t depth;
+        size_t size;
+        char* move;
+        double numerator;
+        size_t denominator;
+        double cbt;
+    };
+    float get_exploration() const { return exploration; }
+private:
+    float exploration;
+
+    void set_node_attribute( Agnode_t* gv_node );
 };
 
+template< typename MoveT >
+Agnode_t* add_node( 
+    GenericRule< MoveT > const& rule, Tree& tree, Player player, 
+    montecarlo::Node< MoveT > const& node )
+{
+    Agnode_t* gv_node = agnode(tree.get_graph(), nullptr, true);
+    Tree::Data* data = (Tree::Data*) agbindrec( gv_node, "data", sizeof(Tree::Data), false);
+    data->depth = 1;
+    data->size = 1;
+    static std::ostringstream value; // reuse allocated memory
+    value.str( "");
+    rule.print_move( value, node.move );
+    data->move = agstrdup( tree.get_graph(), value.str().data());
+    data->numerator = node.numerator;
+    data->denominator = node.denominator;
+    data->cbt = 0.0;
+
+    for (montecarlo::Node< MoveT > const& child : node.children)
+    {
+        Agnode_t* gv_child = add_node( rule, tree, Player( -player ), child );
+        agedge(tree.get_graph(), gv_node, gv_child, nullptr, true);
+
+        Tree::Data* child_data = (Tree::Data*) AGDATA(gv_child);
+        child_data->cbt = MCTS< MoveT >::cbt( child, node, tree.get_exploration());
+        data->size += child_data->size;
+        if (child_data->depth > data->depth)
+            data->depth = child_data->depth;
+    }
+    if (!node.children.empty())
+        ++data->depth;
+
+    return gv_node;
+}
+
+template< typename MoveT >
+std::unique_ptr< GraphvizTree > build_tree( 
+    GVC_t* gv_gvc, 
+    GenericRule< MoveT >& rule, 
+    Player player, 
+    float exploration, 
+    montecarlo::Node< MoveT > const& node )
+{
+    auto tree = std::make_unique< Tree >( gv_gvc, player, exploration );
+    add_node( rule, *tree, player, node );
+    return tree;
+}
+
+/*
 template< typename MoveT >
 struct PrintTree
 {
@@ -395,6 +465,6 @@ void lens( GenericRule< MoveT >& initial_rule, montecarlo::Node< MoveT > const& 
         }
     }
 }
+*/
 
-} // namespace tree
 } // namespace montecarlo

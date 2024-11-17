@@ -45,8 +45,13 @@ Minimax.app
         └── icon.icns
 ```
 
-- create `Minimax.dmg` file
+- create `Minimax.dmg` file (does not work yet, does not unpack on target machine)
 ```
 % hdiutil create -volname Minimax -srcfolder Minimax.app -ov -format UDZO Minimax.dmg
+```
+
+- or create zip archive
+```
+% zip -r minimax.zip Minimax.app
 ```
 

@@ -1,18 +1,25 @@
 # or use gcc with CC=g++-11
 CC=g++
-# install boost and graphviz and raylib with homebrew, clone raygui repo in the same directory level as this repo
+# install some stuff with homebrew, clone raygui repo in the same directory level as this repo
 HOMEBREW=/opt/homebrew/Cellar
+BOOST_PATH=$(HOMEBREW)/boost/1.85.0
 RAYLIB_PATH=$(HOMEBREW)/raylib/5.0
-GRAPHVIZ_PATH=$(HOMEBREW)/graphviz/11.0.0
+GRAPHVIZ_PATH=$(HOMEBREW)/graphviz/12.2.0
+RSVG_PATH=$(HOMEBREW)/librsvg/2.58.4
+GLIB_PATH=$(HOMEBREW)/glib/2.82.2
+CAIRO_PATH=$(HOMEBREW)/cairo/1.18.2
+GDK_PIXBUF_PATH=$(HOMEBREW)/gdk-pixbuf/2.42.12
+
 # use for raylib from source
 # RAYLIB_PATH=../raylib/src
+
 # use for universal binary does not work at the moment because glfw has to be 
 # compiled with the same flags
 #UNIVERSAL_FLAGS = -arch arm64 -arch x86_64
 UNIVERSAL_FLAGS=
-BOOST_PATH=$(HOMEBREW)/boost/1.85.0
-INCLUDE=-I$(BOOST_PATH)/include/ -I$(RAYLIB_PATH)/include -isystem../raygui/src -I$(GRAPHVIZ_PATH)/include/graphviz
-LINK=-L$(RAYLIB_PATH)/lib -lraylib -L$(GRAPHVIZ_PATH)/lib -lgvc -lcgraph
+
+INCLUDE=-I$(BOOST_PATH)/include/ -I$(RAYLIB_PATH)/include -isystem../raygui/src -I$(GRAPHVIZ_PATH)/include -I$(RSVG_PATH)/include/librsvg-2.0/ -I$(GLIB_PATH)/include/glib-2.0 -I$(GLIB_PATH)/lib/glib-2.0/include -I$(CAIRO_PATH)/include/cairo -I$(GDK_PIXBUF_PATH)/include/gdk-pixbuf-2.0
+LINK=-L$(RAYLIB_PATH)/lib -lraylib -L$(GRAPHVIZ_PATH)/lib -lgvc -lcgraph -L$(RSVG_PATH)/lib -lrsvg-2 -L$(GLIB_PATH)/lib -lgobject-2.0 -lglib-2.0 -L$(CAIRO_PATH)/lib -lcairo
 DEBUG=-g
 RELEASE=-O3 -DNDEBUG
 # don't forget to clean if you change OPT
