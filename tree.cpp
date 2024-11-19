@@ -5,7 +5,7 @@
 
 using namespace std;
 
-GraphvizTree::GraphvizTree( GVC_t* gv_gvc, Player player ) : gv_gvc( gv_gvc )
+GraphvizTree::GraphvizTree( GVC_t* gv_gvc, Player player ) : gv_gvc( gv_gvc ), player( player )
 {
     gv_graph = agopen((char*)"g", Agstrictdirected, nullptr);
     if (!gv_graph)
@@ -30,21 +30,6 @@ pointf GraphvizTree::get_focus_coord() const
     return ND_coord(gv_focus_node);
 }
 
-void GraphvizTree::create_subgraph( size_t depth )
-{
-    if (!depth)
-        throw std::runtime_error( "invalid depth (set_subgraph)");
-    if (gv_subgraph)
-    {
-        gvFreeLayout(gv_gvc, gv_subgraph);
-        agclose(gv_subgraph);
-    }
-    gv_subgraph = agsubg(gv_graph, (char*)"subgraph", true);
-    if (!gv_subgraph)
-        throw std::runtime_error( "could not create subgraph (set_subgraph)");
-    add_node_to_subgraph( gv_focus_node, depth );
-}
-
 void GraphvizTree::add_node_to_subgraph( Agnode_t* gv_node, size_t depth )
 {
     agsubnode(gv_subgraph, gv_node, true);
@@ -58,12 +43,30 @@ void GraphvizTree::add_node_to_subgraph( Agnode_t* gv_node, size_t depth )
     }
 }
 
-pair< char*, unsigned > GraphvizTree::render( DisplayNode _display_node, Layout layout )
+pair< char*, unsigned > GraphvizTree::render_sub_graph( 
+    DisplayNode _display_node, Layout layout, size_t depth )
 {
+    if (!depth)
+        throw std::runtime_error( "invalid depth (render_sub_subgraph)");
+    if (gv_subgraph)
+    {
+        gvFreeLayout(gv_gvc, gv_subgraph);
+        agclose(gv_subgraph);
+    }
+    gv_subgraph = agsubg(gv_graph, (char*)"subgraph", true);
+    if (!gv_subgraph)
+        throw std::runtime_error( "could not create subgraph (render_subgraph)");
+    add_node_to_subgraph( gv_focus_node, depth );
+
     display_node = _display_node;
     if (!gv_subgraph)
         throw std::runtime_error( "no subgraph (render)");
-    set_node_attribute( agfstnode(gv_subgraph));
+
+    // strange: this make the node blue and red if i set it to blue, 
+    // seems to interfere with the html table label
+    agsafeset( gv_focus_node, (char*)"color", (char*)"red", "");
+
+    set_node_attribute( agfstnode(gv_subgraph), player );
 
     char const* engine;
     if (layout == Hierarchie)
@@ -77,7 +80,9 @@ pair< char*, unsigned > GraphvizTree::render( DisplayNode _display_node, Layout 
     
     char* rendered_data;
     unsigned length;        
+    
     gvRenderData(gv_gvc, gv_subgraph, "svg", &rendered_data, &length);
+    agsafeset( gv_focus_node, (char*)"color", "", "");
 
     return { rendered_data, length };
 }
@@ -89,7 +94,7 @@ Tree::Tree( GVC_t* gv_gvc, Player player, float exploration ) :
     GraphvizTree( gv_gvc, player ), exploration( exploration )
 {}
 
-void Tree::set_node_attribute( Agnode_t* gv_node )
+void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
 {
     Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
 
@@ -112,7 +117,7 @@ void Tree::set_node_attribute( Agnode_t* gv_node )
         auto parent = e ? agtail( e ) : nullptr;
         auto parent_data = parent ? (Data*)aggetrec(parent, "data", 0) : nullptr;
         value 
-            << "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">"
+            << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">"
             << entry_prefix << "move" << entry_postfix << node_data->move << line_postfix
             << entry_prefix << "points" << entry_postfix << node_data->numerator << " (" 
             << std::fixed << std::setprecision( 2 ) << node_data->numerator / node_data->denominator << ")" << line_postfix
@@ -127,10 +132,13 @@ void Tree::set_node_attribute( Agnode_t* gv_node )
     else
         throw std::runtime_error( "invalid display node");
 
-    agsafeset( gv_node, (char*)"label", agstrdup_html( gv_subgraph, value.str().data()), (char*)"");
+    agsafeset( gv_node, (char*)"label", agstrdup_html( gv_subgraph, value.str().data()), "");
+
+    if (player == player1)
+        agsafeset(gv_node, (char*)"shape", (char*)"box", "");
 
     for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
-        set_node_attribute( aghead( e ));
+        set_node_attribute( aghead( e ), Player( -player ));
 }
 
 } // namespace montecarlo

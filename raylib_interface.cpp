@@ -695,8 +695,7 @@ void build_mc_tree( GameGenerics< MoveT >& game_generics, gui::Player& player )
     auto& root_node = algo->get_root();
     player.graphviz_tree = montecarlo::build_tree(
         gv_gvc, game_generics.rule, player.player, algo->get_mcts().exploration, root_node );
-    player.graphviz_tree->create_subgraph( player.tree_depth );
-    auto p = player.graphviz_tree->render( Stats, Circular);
+    auto p = player.graphviz_tree->render_sub_graph( Stats, Circular, player.tree_depth);
     player.tree_texture = make_unique< gui::RaylibTexture >( 
         p.first, p.second, player.graphviz_tree->get_focus_coord());
 }
@@ -1047,8 +1046,8 @@ void show_side_panel()
 
                 if (prev_tree_depth != game.opponent->tree_depth && game.opponent->graphviz_tree)
                 {    
-                    game.opponent->graphviz_tree->create_subgraph( game.opponent->tree_depth );
-                    auto p = game.opponent->graphviz_tree->render( Stats, Circular);
+                    auto p = game.opponent->graphviz_tree->render_sub_graph( 
+                        Stats, Circular, game.opponent->tree_depth );
                     game.opponent->tree_texture = make_unique< gui::RaylibTexture >( 
                         p.first, p.second, game.opponent->graphviz_tree->get_focus_coord());
                 }

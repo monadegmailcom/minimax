@@ -211,23 +211,25 @@ public:
 
     virtual ~GraphvizTree();
 
-    virtual void set_node_attribute( Agnode_t* gv_node ) = 0;
-
-    std::pair< char*, unsigned > render( DisplayNode _display_node, Layout layout );
+    std::pair< char*, unsigned > render_sub_graph( 
+        DisplayNode _display_node, Layout layout, size_t depth );
     Agraph_t* get_graph() { return gv_graph; }
 
-    void create_subgraph( size_t depth );
     void set_focus_node( Agnode_t* node ) { gv_focus_node = node; }
     pointf get_focus_coord() const;
 protected:
+    virtual void set_node_attribute( Agnode_t* gv_node, Player ) = 0;
+
     std::ostringstream value; // reuse allocated memory
     DisplayNode display_node = Stats;
     Agraph_t* gv_graph = nullptr;
     Agraph_t* gv_subgraph = nullptr;
-private:
-    GVC_t* gv_gvc = nullptr;
     Agnode_t* gv_focus_node = nullptr;
+private:
     void add_node_to_subgraph( Agnode_t* gv_node, size_t depth );
+
+    GVC_t* gv_gvc = nullptr;
+    Player player;
 };
 
 namespace montecarlo
@@ -252,7 +254,7 @@ public:
 private:
     float exploration;
 
-    void set_node_attribute( Agnode_t* gv_node );
+    void set_node_attribute( Agnode_t* gv_node, Player );
 };
 
 template< typename MoveT >
