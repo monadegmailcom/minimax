@@ -416,8 +416,9 @@ private:
     double prev_shift_x = 0.0;
     double prev_shift_y = 0.0;
     double prev_zoom = 1.0;
+    pointf center_coord;
 public:
-    RaylibTexture( char* svgData, unsigned dataSize )
+    RaylibTexture( char* svgData, unsigned dataSize, pointf center_coord ) : center_coord( center_coord )
     {
         GError* error = NULL;
         handle = rsvg_handle_new_from_data((const guint8*)svgData, dataSize, &error);
@@ -457,17 +458,19 @@ public:
         cairo_surface_t* surface = cairo_image_surface_create( CAIRO_FORMAT_ARGB32, width, height);
         cairo_t* cr = cairo_create(surface);
 
-        RsvgRectangle viewport;
-        viewport.x = 0; //(svg_width * zoom) / 2 + shift_x * zoom;
-        viewport.y = 0; //(svg_height * zoom) / 2 + shift_y * zoom;
-        viewport.width = width; // svg_width * zoom;
-        viewport.height = height; // svg_height * zoom;
+        RsvgRectangle viewport = {
+            .x = 0,
+            .y = 0,
+            .width = width,
+            .height = height
+        };
 
-        //cairo_translate(cr, -(svg_width + shift_x) / 2 * zoom, -(svg_height + shift_y) / 2 * zoom);
-        cairo_translate(cr, width / 2.0, height / 2.0);
+        const double center_x = width * center_coord.x / svg_width;
+        const double center_y = height * center_coord.y / svg_height;
+        cairo_translate(cr, center_x, center_y);
         cairo_scale(cr, zoom, zoom);
 
-        cairo_translate(cr, shift_x -width / 2.0, shift_y -height / 2.0);
+        cairo_translate(cr, shift_x - center_x, shift_y - center_y);
 
         GError* error = NULL;
         if (!rsvg_handle_render_document(handle, cr, &viewport, &error ))
@@ -488,6 +491,7 @@ public:
             .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
         };
 
+        UnloadTexture( texture );
         texture = LoadTextureFromImage(image);
 
         cairo_destroy(cr);
@@ -530,7 +534,7 @@ struct Montecarlo
 {
     enum ChooseIdx { BestIdx };
     Menu choose_menu = Menu {"choose", {"best"}};
-    Spinner simulations = Spinner( "simulations", 20, 1, 1000000 );
+    Spinner simulations = Spinner( "simulations", 100, 1, 1000000 );
 //    Spinner simulations = Spinner( "simulations", 80000, 1, 1000000 );
     ValueBoxFloat exploration_factor = ValueBoxFloat( "exploration factor", "0.40" );
 };
@@ -545,6 +549,7 @@ struct Player
 
     unique_ptr< RaylibTexture > tree_texture;
     unique_ptr< GraphvizTree > graphviz_tree;
+    size_t tree_depth = 2;
 
     Negamax negamax;
     Minimax minimax;
@@ -690,8 +695,10 @@ void build_mc_tree( GameGenerics< MoveT >& game_generics, gui::Player& player )
     auto& root_node = algo->get_root();
     player.graphviz_tree = montecarlo::build_tree(
         gv_gvc, game_generics.rule, player.player, algo->get_mcts().exploration, root_node );
+    player.graphviz_tree->create_subgraph( player.tree_depth );
     auto p = player.graphviz_tree->render( Stats, Circular);
-    player.tree_texture = make_unique< gui::RaylibTexture >( p.first, p.second );
+    player.tree_texture = make_unique< gui::RaylibTexture >( 
+        p.first, p.second, player.graphviz_tree->get_focus_coord());
 }
 
 // return true if the game is finished
@@ -721,8 +728,9 @@ bool process_move( GameGenerics< MoveT >& game_generics )
             if (game.opponent->algo_menu.selected != gui::Player::HumanIdx)
                 game.on_hold = true;
 
-            if (game.current_player->algo_menu.selected != gui::Player::HumanIdx)
+            if (game.current_player->algo_menu.selected == gui::Player::MontecarloIdx)
                 build_mc_tree( game_generics, *game.current_player );
+            // TODO: build tree for minimax and negamax
         }
         
         game_generics.last_move = move;
@@ -1021,6 +1029,31 @@ void show_side_panel()
         {
             dropdown_menu.add( game.show_menu );
 
+            if (game.show_menu.selected == gui::Game::TreeIdx)
+            {
+                const size_t prev_tree_depth = game.opponent->tree_depth;
+                if (show_button( "#121#" ))
+                    ++game.opponent->tree_depth;
+                if (game.opponent->tree_depth <= 1)
+                    GuiSetState( STATE_DISABLED );
+                show_label( "tree depth", to_string( game.opponent->tree_depth ).c_str());
+                if (show_button( "#120#" ))
+                {
+                    if (!game.opponent->tree_depth)
+                        throw runtime_error( "invalid tree depth (show_side_panel)");
+                    --game.opponent->tree_depth;
+                }
+                GuiSetState(STATE_NORMAL);
+
+                if (prev_tree_depth != game.opponent->tree_depth && game.opponent->graphviz_tree)
+                {    
+                    game.opponent->graphviz_tree->create_subgraph( game.opponent->tree_depth );
+                    auto p = game.opponent->graphviz_tree->render( Stats, Circular);
+                    game.opponent->tree_texture = make_unique< gui::RaylibTexture >( 
+                        p.first, p.second, game.opponent->graphviz_tree->get_focus_coord());
+                }
+            }
+
             if (!game.on_hold)
                 GuiSetState(STATE_DISABLED);
 
@@ -1148,22 +1181,6 @@ void show_graph()
 {
     gui::Game& game = games[game_menu.selected];
     gui::Player& player = *game.opponent;
-    if (!player.tree_texture)
-    {        
-        if (player.algo_menu.selected == gui::Player::MontecarloIdx)
-        {
-            if (game_menu.selected == TicTacToeIdx)
-                build_mc_tree( ttt::game_generics, player );
-            else if (game_menu.selected == UltimateTicTacToeIdx)
-                build_mc_tree( uttt::game_generics, player );
-            else
-                throw runtime_error( "invalid game (show_graph)");
-        }
-        else
-        {
-            //TODO: no trees yet
-        }
-    }
     if (player.tree_texture)
     {
         const float window_height = GetScreenHeight();
@@ -1192,7 +1209,7 @@ void show_graph()
         const float wheel = GetMouseWheelMove();
         if (wheel != 0) 
         {
-            shift_and_scale.scale += wheel * 0.05f;
+            shift_and_scale.scale += wheel * 0.1f;
             // Prevent zooming out too much
             if (shift_and_scale.scale < 0.1f) 
                 shift_and_scale.scale = 0.1f; 
@@ -1200,7 +1217,6 @@ void show_graph()
 
         player.tree_texture->updateTexture( 
             board_width, board_width, shift_and_scale.position.x, shift_and_scale.position.y, shift_and_scale.scale);
-
         DrawTexture( player.tree_texture->get_texture(), 0, 0, RAYWHITE);
     }
 }
@@ -1273,6 +1289,8 @@ void show()
         RaylibRender raylib_render;
         handleWindowResize();
 
+        show_side_panel();
+
         gui::Game& game = games[game_menu.selected];
         if (   ui_state == ConfigureGame
             || game.opponent->algo_menu.selected == gui::Player::HumanIdx 
@@ -1280,8 +1298,6 @@ void show()
             show_board();
         else if (game.show_menu.selected == gui::Game::TreeIdx)
             show_graph();
-
-        show_side_panel();
     }
 
     gvFreeContext(gv_gvc);

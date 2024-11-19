@@ -215,12 +215,19 @@ public:
 
     std::pair< char*, unsigned > render( DisplayNode _display_node, Layout layout );
     Agraph_t* get_graph() { return gv_graph; }
+
+    void create_subgraph( size_t depth );
+    void set_focus_node( Agnode_t* node ) { gv_focus_node = node; }
+    pointf get_focus_coord() const;
 protected:
     std::ostringstream value; // reuse allocated memory
     DisplayNode display_node = Stats;
     Agraph_t* gv_graph = nullptr;
+    Agraph_t* gv_subgraph = nullptr;
 private:
     GVC_t* gv_gvc = nullptr;
+    Agnode_t* gv_focus_node = nullptr;
+    void add_node_to_subgraph( Agnode_t* gv_node, size_t depth );
 };
 
 namespace montecarlo
@@ -254,6 +261,7 @@ Agnode_t* add_node(
     montecarlo::Node< MoveT > const& node )
 {
     Agnode_t* gv_node = agnode(tree.get_graph(), nullptr, true);
+
     Tree::Data* data = (Tree::Data*) agbindrec( gv_node, "data", sizeof(Tree::Data), false);
     data->depth = 1;
     data->size = 1;
@@ -270,7 +278,7 @@ Agnode_t* add_node(
         Agnode_t* gv_child = add_node( rule, tree, Player( -player ), child );
         agedge(tree.get_graph(), gv_node, gv_child, nullptr, true);
 
-        Tree::Data* child_data = (Tree::Data*) AGDATA(gv_child);
+        Tree::Data* child_data = (Tree::Data*)aggetrec(gv_child, "data", 0);
         child_data->cbt = MCTS< MoveT >::cbt( child, node, tree.get_exploration());
         data->size += child_data->size;
         if (child_data->depth > data->depth)
@@ -292,6 +300,8 @@ std::unique_ptr< GraphvizTree > build_tree(
 {
     auto tree = std::make_unique< Tree >( gv_gvc, player, exploration );
     add_node( rule, *tree, player, node );
+    tree->set_focus_node( agfstnode( tree->get_graph()));
+
     return tree;
 }
 
