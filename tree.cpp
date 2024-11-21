@@ -10,8 +10,6 @@ GraphvizTree::GraphvizTree( GVC_t* gv_gvc, Player player ) : gv_gvc( gv_gvc ), p
     gv_graph = agopen((char*)"g", Agstrictdirected, nullptr);
     if (!gv_graph)
         throw std::runtime_error( "could not create graph");
-    char const* player_name = player == player1 ? "player1" : "player2";
-    agsafeset( gv_graph, (char*)"label", (char*)player_name, (char*)"");
     agsafeset( gv_graph, (char*)"bgcolor", (char*)"transparent", (char*)"");
 }
 
@@ -25,9 +23,20 @@ GraphvizTree::~GraphvizTree()
     agclose(gv_graph);
 }
 
-pointf GraphvizTree::get_focus_coord() const
+Agnode_t* GraphvizTree::get_node_by_coord( double x, double y )
 {
-    return ND_coord(gv_focus_node);
+    for (auto n = agfstnode(gv_subgraph); n; n = agnxtnode( gv_subgraph, n ))
+    {
+        auto coord = ND_coord(n);
+        double left = coord.x - ND_xsize( n ) / 2;
+        double right = coord.x + ND_xsize( n ) / 2;
+        double top = coord.y - ND_ysize( n ) / 2;
+        double bottom = coord.y + ND_ysize( n ) / 2;
+
+        if (left <= x && x <= right && top <= y && y <= bottom)
+            return n; 
+    }
+    return nullptr;
 }
 
 void GraphvizTree::add_node_to_subgraph( Agnode_t* gv_node, size_t depth )
@@ -43,7 +52,7 @@ void GraphvizTree::add_node_to_subgraph( Agnode_t* gv_node, size_t depth )
     }
 }
 
-pair< char*, unsigned > GraphvizTree::render_sub_graph( 
+GraphvizTree::RenderData GraphvizTree::render_sub_graph( 
     DisplayNode _display_node, Layout layout, size_t depth )
 {
     if (!depth)
@@ -56,14 +65,20 @@ pair< char*, unsigned > GraphvizTree::render_sub_graph(
     gv_subgraph = agsubg(gv_graph, (char*)"subgraph", true);
     if (!gv_subgraph)
         throw std::runtime_error( "could not create subgraph (render_subgraph)");
+    
+    auto gv_edge = agfstin( gv_graph, gv_focus_node );
+    if (gv_edge)
+    {
+        agsubnode(gv_subgraph, agtail( gv_edge ), true);
+        agsubedge(gv_subgraph, gv_edge, true);
+    }
+    
     add_node_to_subgraph( gv_focus_node, depth );
 
     display_node = _display_node;
     if (!gv_subgraph)
         throw std::runtime_error( "no subgraph (render)");
 
-    // strange: this make the node blue and red if i set it to blue, 
-    // seems to interfere with the html table label
     agsafeset( gv_focus_node, (char*)"color", (char*)"red", "");
 
     set_node_attribute( agfstnode(gv_subgraph), player );
@@ -81,10 +96,17 @@ pair< char*, unsigned > GraphvizTree::render_sub_graph(
     char* rendered_data;
     unsigned length;        
     
-    gvRenderData(gv_gvc, gv_subgraph, "svg", &rendered_data, &length);
+    gvRenderData(gv_gvc, gv_subgraph, "png", &rendered_data, &length);
+
     agsafeset( gv_focus_node, (char*)"color", "", "");
 
-    return { rendered_data, length };
+    boxf box = GD_bb(gv_subgraph);
+
+    return RenderData { 
+        .data = rendered_data, 
+        .length = length,
+        .width = box.UR.x - box.LL.x,
+        .height = box.UR.y - box.LL.y};
 }
 
 namespace montecarlo
@@ -100,7 +122,7 @@ void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
 
     value.str("");
     if (display_node == SingleMove)
-        ;// TODO: implement
+        value << node_data->move;
     else if (display_node == Board)
     {
         /* TODO implement
@@ -136,6 +158,8 @@ void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
 
     if (player == player1)
         agsafeset(gv_node, (char*)"shape", (char*)"box", "");
+    else
+        agsafeset(gv_node, (char*)"shape", (char*)"ellipse", "");
 
     for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
         set_node_attribute( aghead( e ), Player( -player ));

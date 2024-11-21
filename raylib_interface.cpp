@@ -213,7 +213,7 @@ Move cell_indices_to_move( pair< int, int > const& cell_indices )
 struct Menu 
 {
     Menu( string const& name, vector< string > const& items, int selected = 0 ) 
-        : name( name ), dropped_down( false ), selected( selected ), items( items ) 
+        : name( name ), dropped_down( false ), selected( selected ), prev_selected( selected ), items( items ) 
     {
         if (!items.empty())
         {
@@ -222,9 +222,22 @@ struct Menu
                 str += ";" + *itr;
         }
     }
+
+    bool has_changed()
+    {
+        if (selected != prev_selected)
+        {
+            prev_selected = selected;
+            return true;
+        }
+        return false;
+    }
+
     string name;
     bool dropped_down;
     int selected;
+    int prev_selected;
+
     const vector< string > items;
     string str;
 };
@@ -408,41 +421,67 @@ class RaylibTexture
 {
 private:
     Texture2D texture;
-    RsvgHandle* handle = nullptr;
-    double svg_width;
-    double svg_height;
-    double prev_width = 0.0;
-    double prev_height = 0.0;
-    double prev_shift_x = 0.0;
-    double prev_shift_y = 0.0;
-    double prev_zoom = 1.0;
-    pointf center_coord;
+    RenderTexture2D render_texture;
+    float graph_width;
+    float graph_height;
 public:
-    RaylibTexture( char* svgData, unsigned dataSize, pointf center_coord ) : center_coord( center_coord )
+    RaylibTexture( GraphvizTree::RenderData const& render_data ) : graph_width( render_data.width ), graph_height( render_data.height )
     {
-        GError* error = NULL;
-        handle = rsvg_handle_new_from_data((const guint8*)svgData, dataSize, &error);
-        if (!handle) 
-        {
-            ostringstream oss;
-            oss << "Failed to load SVG data: " << error->message;
-            g_error_free(error);
-            throw runtime_error( oss.str());
-        }
-        rsvg_handle_get_intrinsic_size_in_pixels( handle, &svg_width, &svg_height );
+        Image image = LoadImageFromMemory(".png", (unsigned char*)render_data.data, render_data.length);
+        if (image.data == NULL) 
+            throw std::runtime_error("Failed to load image from memory");
+        
+        texture = LoadTextureFromImage(image);
+        SetTextureFilter(texture, TEXTURE_FILTER_BILINEAR);
+        UnloadImage(image);     
     }
 
     ~RaylibTexture()
     {
-        g_object_unref(handle);
         UnloadTexture( texture );
+        UnloadRenderTexture(render_texture);
     }
 
-    Texture2D& get_texture() { return texture; }
-
-    void updateTexture( 
-        double width, double height, double shift_x, double shift_y, double zoom )
+    std::pair< double, double > calc_coord( 
+        float board_width, float board_height, float shift_x, float shift_y, float zoom, double x, double y )
     {
+        const double texture_trans_x = x * texture.width / board_width - shift_x;
+        const double texture_trans_y = y * texture.height / board_height - shift_y;
+        
+        const double zoom_center_x = texture.width / 2 - shift_x;
+        const double zoom_center_y = texture.height / 2 - shift_y;
+
+        const double texture_zoomed_x = zoom_center_x + (texture_trans_x - zoom_center_x) / zoom;
+        const double texture_zoomed_y = zoom_center_y + (texture_trans_y - zoom_center_y) / zoom;
+
+        const double scale_x = graph_width / texture.width;
+        const double scale_y = graph_height / texture.height;
+
+        return { scale_x * texture_zoomed_x, graph_height - scale_y * texture_zoomed_y };
+    }
+
+    void draw( 
+        float board_width, float board_height, float shift_x, float shift_y, float zoom )
+    {
+        UnloadRenderTexture(render_texture);
+        render_texture = LoadRenderTexture(board_width, board_height);
+        BeginTextureMode( render_texture );
+            ClearBackground(BLANK);
+            Camera2D camera = { 
+                .offset = { board_width / 2, board_height / 2 },
+                .target = { -shift_x + texture.width / 2.0f, shift_y + texture.height / 2.0f },
+                .rotation = 0.0f,
+                .zoom = zoom * board_width / texture.width};
+            BeginMode2D( camera );
+                Rectangle sourceRec = { 0, 0, (float)texture.width, (float)-texture.height };
+                Rectangle destRec = { 0, 0, (float)texture.width, (float)texture.height };
+                Vector2 origin = { 0, 0 };
+                DrawTexturePro(texture, sourceRec, destRec, origin, 0.0f, RAYWHITE);
+            EndMode2D();
+        EndTextureMode();
+        DrawTexture( render_texture.texture, 0, 0, RAYWHITE);
+
+/*
         if (width == prev_width && height == prev_height && 
             shift_x == prev_shift_x && shift_y == prev_shift_y && 
             zoom == prev_zoom)
@@ -453,6 +492,7 @@ public:
         prev_shift_x = shift_x;
         prev_shift_y = shift_y;
         prev_zoom = zoom;
+
 
         // Create a Cairo surface to render the SVG
         cairo_surface_t* surface = cairo_image_surface_create( CAIRO_FORMAT_ARGB32, width, height);
@@ -465,8 +505,8 @@ public:
             .height = height
         };
 
-        const double center_x = width * center_coord.x / svg_width;
-        const double center_y = height * center_coord.y / svg_height;
+        const double center_x = width / 2;
+        const double center_y = height / 2;
         cairo_translate(cr, center_x, center_y);
         cairo_scale(cr, zoom, zoom);
 
@@ -491,11 +531,13 @@ public:
             .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
         };
 
+
         UnloadTexture( texture );
         texture = LoadTextureFromImage(image);
 
         cairo_destroy(cr);
         cairo_surface_destroy(surface);
+*/
     }
 };
 
@@ -545,7 +587,7 @@ struct Player
     string name;
     ::Player player;
     enum AlgoIdx { HumanIdx, NegamaxIdx, MinimaxIdx, MontecarloIdx };
-    Menu algo_menu = Menu { "algorithm", {"human", "negamax", "minimax", "montecarlo"} };
+    Menu algo_menu = Menu { "algorithm", {"human", "negamax", "minimax", "montecarlo"}, MontecarloIdx };
 
     unique_ptr< RaylibTexture > tree_texture;
     unique_ptr< GraphvizTree > graphviz_tree;
@@ -562,11 +604,15 @@ struct Game
         player1( player1_name, ::player1 ), player2( player2_name, ::player2 ) {}
 
     enum PlayModeIdx { PlayIdx, SingleStepPlayIdx, BatchPlayIdx };
-    Menu play_mode_menu = Menu { "play mode", {"play", "single step play", "batch play"} };
+    Menu play_mode_menu = Menu { "play mode", {"play", "single step play", "batch play"}, SingleStepPlayIdx };
     bool on_hold = false;
 
     enum ShowIdx { BoardIdx, TreeIdx };
-    Menu show_menu = Menu { "show", {"board", "tree"} };
+    Menu show_menu = Menu { "show", {"board", "tree"}, TreeIdx };
+
+    DisplayNode display_modes[3] = { Board, SingleMove, Stats };
+    enum DisplayIdx { PNGIdx, MoveIdx, StatsIdx};
+    Menu display_menu = Menu { "display", {"board", "move", "stats"}, MoveIdx };
 
     Player player1;
     Player player2;
@@ -578,12 +624,14 @@ struct Game
 
 } // namespace gui {
 
-struct ShiftAndScale
+struct MouseEvent
 {
     Vector2 position = { 0.0f, 0.0f };
-    float scale = 1.0f;
     Vector2 last_mouse_position = { 0.0f, 0.0f };
+    float scale = 1.0f;
+    float last_click_time = 0.0f;
     bool dragging = false;
+    bool double_click = false;
 };
 
 enum GameIdx { TicTacToeIdx, UltimateTicTacToeIdx };
@@ -592,7 +640,7 @@ gui::Game games[2] = { gui::Game( "player x", "player o" ), gui::Game( "player x
 enum UIState { ConfigureGame, PlayGame };
 UIState ui_state = ConfigureGame;
 GVC_t* gv_gvc = nullptr;
-ShiftAndScale shift_and_scale;
+MouseEvent mouse_event;
 
 optional< uint8_t > handle_board_event( 
     ::Player const* board, vector< uint8_t > const& valid_moves, ::Player player, Convert convert, int number_of_cells )  
@@ -695,9 +743,10 @@ void build_mc_tree( GameGenerics< MoveT >& game_generics, gui::Player& player )
     auto& root_node = algo->get_root();
     player.graphviz_tree = montecarlo::build_tree(
         gv_gvc, game_generics.rule, player.player, algo->get_mcts().exploration, root_node );
-    auto p = player.graphviz_tree->render_sub_graph( Stats, Circular, player.tree_depth);
-    player.tree_texture = make_unique< gui::RaylibTexture >( 
-        p.first, p.second, player.graphviz_tree->get_focus_coord());
+    gui::Game& game = games[game_menu.selected];
+    auto render_data = player.graphviz_tree->render_sub_graph( 
+        game.display_modes[game.display_menu.selected], Circular, player.tree_depth);
+    player.tree_texture = make_unique< gui::RaylibTexture >( render_data );
 }
 
 // return true if the game is finished
@@ -928,6 +977,27 @@ void show_game_info( gui::Player& player, bool game_finished )
         throw runtime_error( "invalid game (show_player_game_info)");
 }
 
+struct DisableGui
+{
+    DisableGui( bool disable = true ) : state( GuiGetState())
+    { 
+        if (disable)
+            GuiSetState(STATE_DISABLED); 
+    }
+    
+    ~DisableGui() 
+    { 
+        GuiSetState(state); 
+    }
+
+    void operator()()
+    {
+        GuiSetState(STATE_DISABLED);
+    }
+
+    int state; 
+};
+
 void show_side_panel()
 {
     panel_y = panel_spacer;
@@ -1031,35 +1101,45 @@ void show_side_panel()
             if (game.show_menu.selected == gui::Game::TreeIdx)
             {
                 const size_t prev_tree_depth = game.opponent->tree_depth;
-                if (show_button( "#121#" ))
-                    ++game.opponent->tree_depth;
-                if (game.opponent->tree_depth <= 1)
-                    GuiSetState( STATE_DISABLED );
-                show_label( "tree depth", to_string( game.opponent->tree_depth ).c_str());
-                if (show_button( "#120#" ))
+                
                 {
-                    if (!game.opponent->tree_depth)
-                        throw runtime_error( "invalid tree depth (show_side_panel)");
-                    --game.opponent->tree_depth;
+                    DisableGui disable_gui( false );
+                    if (show_button( "#121#" ))
+                        ++game.opponent->tree_depth;
+                    if (game.opponent->tree_depth <= 1)
+                        disable_gui();
+                    show_label( "tree depth", to_string( game.opponent->tree_depth ).c_str());
+                    if (show_button( "#120#" ))
+                    {
+                        if (!game.opponent->tree_depth)
+                            throw runtime_error( "invalid tree depth (show_side_panel)");
+                        --game.opponent->tree_depth;
+                    }
                 }
-                GuiSetState(STATE_NORMAL);
 
-                if (prev_tree_depth != game.opponent->tree_depth && game.opponent->graphviz_tree)
-                {    
-                    auto p = game.opponent->graphviz_tree->render_sub_graph( 
-                        Stats, Circular, game.opponent->tree_depth );
-                    game.opponent->tree_texture = make_unique< gui::RaylibTexture >( 
-                        p.first, p.second, game.opponent->graphviz_tree->get_focus_coord());
+                dropdown_menu.add( game.display_menu );
+                
+                bool rerender_tree = false;
+                if (game.display_menu.has_changed() || prev_tree_depth != game.opponent->tree_depth)
+                    rerender_tree = true;
+
+                if (game.opponent->graphviz_tree && rerender_tree)
+                {
+                    auto render_data = game.opponent->graphviz_tree->render_sub_graph( 
+                        game.display_modes[game.display_menu.selected], Circular, game.opponent->tree_depth );
+                    game.opponent->tree_texture = make_unique< gui::RaylibTexture >( render_data );
+                    mouse_event = MouseEvent();
                 }
             }
 
-            if (!game.on_hold)
-                GuiSetState(STATE_DISABLED);
+            {
+                DisableGui disable_gui( false );
+                if (!game.on_hold)
+                    disable_gui();
 
-            if (show_button( "next move" ))
-                game.on_hold = false;
-
-            GuiSetState(STATE_NORMAL);
+                if (show_button( "next move" ))
+                    game.on_hold = false;
+            }
         }
         // TODO: batch mode not yet implemented
         else if (game.play_mode_menu.selected == gui::Game::BatchPlayIdx)
@@ -1077,7 +1157,7 @@ void show_side_panel()
             game.player1.tree_texture.reset();
             game.player2.tree_texture.reset();
 
-            shift_and_scale = ShiftAndScale();
+            mouse_event = MouseEvent();
 
             ui_state = ConfigureGame;
         }
@@ -1182,41 +1262,72 @@ void show_graph()
     gui::Player& player = *game.opponent;
     if (player.tree_texture)
     {
-        const float window_height = GetScreenHeight();
-        const float window_width = GetScreenWidth();
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) 
         {
-            shift_and_scale.last_mouse_position = GetMousePosition();
-            
+            mouse_event.last_mouse_position = GetMousePosition();
+            double click_time = GetTime();
+            const float time_threshold = 0.3f;
+            if (click_time - mouse_event.last_click_time < time_threshold)
+                mouse_event.double_click = true;
+            else
+                mouse_event.double_click = false;
+
+            mouse_event.last_click_time = click_time;
+
             if (CheckCollisionPointRec( 
-                shift_and_scale.last_mouse_position, 
-                {0, 0, window_width, window_height}))
-                shift_and_scale.dragging = true;
+                    mouse_event.last_mouse_position, 
+                    {0, 0, board_width, board_width}))
+                mouse_event.dragging = true;
         }
-        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-            shift_and_scale.dragging = false;
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && mouse_event.dragging)
+        {
+            Vector2 current_mouse_pos = GetMousePosition();
+            const float distance_threshold = 5.0f;
+            // clicked and not dragged?
+            if (std::abs(current_mouse_pos.x - mouse_event.last_mouse_position.x) < distance_threshold &&
+                std::abs(current_mouse_pos.y - mouse_event.last_mouse_position.y) < distance_threshold &&
+                mouse_event.double_click)
+            {
+                auto coord = player.tree_texture->calc_coord(
+                    board_width, board_width, 
+                    mouse_event.position.x, mouse_event.position.y, mouse_event.scale,
+                    current_mouse_pos.x, current_mouse_pos.y);
+                
+                Agnode_t* gv_node = player.graphviz_tree->get_node_by_coord( coord.first, coord.second );
+                if (gv_node)
+                {
+                    player.graphviz_tree->set_focus_node( gv_node );
+                    auto render_data = game.opponent->graphviz_tree->render_sub_graph( 
+                        game.display_modes[game.display_menu.selected], Circular, player.tree_depth );
+                    player.tree_texture = make_unique< gui::RaylibTexture >( render_data );
+                    mouse_event = MouseEvent();
+                }
+            }
+
+            mouse_event.dragging = false;
         }
-        if (shift_and_scale.dragging) {
+        
+        if (mouse_event.dragging) 
+        {
             const Vector2 current_mouse_position = GetMousePosition();
-            const Vector2 delta = {current_mouse_position.x - shift_and_scale.last_mouse_position.x,
-                             current_mouse_position.y - shift_and_scale.last_mouse_position.y };
-            shift_and_scale.position.x += delta.x;
-            shift_and_scale.position.y += delta.y;
-            shift_and_scale.last_mouse_position = current_mouse_position;
+            const Vector2 delta = {current_mouse_position.x - mouse_event.last_mouse_position.x,
+                             current_mouse_position.y - mouse_event.last_mouse_position.y };
+            mouse_event.position.x += delta.x;
+            mouse_event.position.y += delta.y;
+            mouse_event.last_mouse_position = current_mouse_position;
         }
 
         const float wheel = GetMouseWheelMove();
         if (wheel != 0) 
         {
-            shift_and_scale.scale += wheel * 0.1f;
+            mouse_event.scale += wheel * 0.1f;
             // Prevent zooming out too much
-            if (shift_and_scale.scale < 0.1f) 
-                shift_and_scale.scale = 0.1f; 
+            if (mouse_event.scale < 0.1f) 
+                mouse_event.scale = 0.1f; 
         }
 
-        player.tree_texture->updateTexture( 
-            board_width, board_width, shift_and_scale.position.x, shift_and_scale.position.y, shift_and_scale.scale);
-        DrawTexture( player.tree_texture->get_texture(), 0, 0, RAYWHITE);
+        player.tree_texture->draw( 
+            board_width, board_width, mouse_event.position.x, mouse_event.position.y, mouse_event.scale);
     }
 }
 

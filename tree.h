@@ -3,7 +3,6 @@
 #include "montecarlo.h"
 
 #include <graphviz/gvc.h>
-#include <librsvg/rsvg.h>
 
 #include <vector>
 #include <iostream>
@@ -12,107 +11,7 @@
 #include <limits>
 #include <iomanip>
 #include <cassert>
-/* 
-void print_preamble( std::ostream&, TreeType );
-void print_closing( std::ostream& );
-
-enum DisplayNode { Board = 1, Stats = -1 };
-
-template< typename MoveT >
-struct Node
-{
-    Node( Vertex< MoveT > const& vertex ) : size( 1 ), vertex( vertex ), depth( 1 )
-    {
-        for (Vertex< MoveT > const& child_vertex : vertex.children)
-        {
-            children.emplace_back( child_vertex );
-            Node const& child_node = children.back();
-            size += child_node.size;
-            if (child_node.depth > depth)
-                depth = child_node.depth;
-        }
-        if (!children.empty())
-            ++depth;
-    }
-    std::list< Node > children;
-
-    size_t size;
-    Vertex< MoveT > const& vertex;
-    size_t depth;
-};
-
-template< typename MoveT >
-struct PrintTree
-{
-    PrintTree( std::ostream& stream, Node< MoveT > const& node,
-               GenericRule< MoveT >& rule, Player player,
-               TreeType type = Hierarchie,
-               DisplayNode display_node = Board,
-               Node< MoveT > const* emph = nullptr,
-               size_t depth = std::numeric_limits< size_t >::max()) :
-        stream( stream ), rule( rule ), emph( emph ),
-        out_stream( OutStream { stream, "<B>", "</B>", "<BR/>", "&nbsp;" } ),
-        display_node( display_node )
-    {
-        print_preamble( stream, type );
-        rec( "v", node, nullptr, player, depth );
-        print_closing( stream );
-    }
-
-    void rec( std::string const& name, Node< MoveT > const& node,
-              Node< MoveT > const* parent, Player player, size_t depth )
-    {
-        // print vertex
-        stream << "\"" << name << "\" [label=<";
-        if (display_node == Board)
-            rule.print_board( out_stream, node.vertex.move );
-        else
-        {
-            stream << std::fixed << std::setprecision( 2 )
-                   << "m = " << std::setw( 5 );
-            rule.print_move(stream, node.vertex.move);
-            stream << "<BR/>"
-                   << "v = " << std::setw( 5 ) << node.vertex.value << "<BR/>"
-                   << "d = " << std::setw( 5 ) << node.depth << "<BR/>"
-                   << "s = " << std::setw( 5 ) << node.size << "<BR/>"
-                   << "r = " << std::setw( 5 ) << (parent ? double( node.size ) / (parent->size - 1) : 1 );
-        }
-        stream << ">";
-        if (&node == emph)
-            stream << " color=\"red\"";
-        if (player == player1)
-            stream << " shape=box";
-        stream << "]\n";
-
-        --depth;
-        if (!depth)
-            return;
-
-        for (Node< MoveT > const& child : node.children)
-        {
-            std::ostringstream s;
-            rule.print_move( s, child.vertex.move );
-            const std::string new_name = name + " " + s.str();
-
-            // plot edge to child
-            stream << "\"" << name << "\"" << " -- \"" << new_name << "\"\n";
-
-            // apply move
-            rule.apply_move( child.vertex.move, player );
-
-            rec( new_name, child, &node, Player( -player ), depth);
-            // undo move
-            rule.undo_move( child.vertex.move, player );
-        }
-    }
-
-    std::ostream& stream;
-    GenericRule< MoveT >& rule;
-    Node< MoveT > const* emph;
-    OutStream out_stream;
-    DisplayNode display_node;
-};
-
+/*
 template< typename MoveT >
 void tree_lens( GenericRule< MoveT > const& initial_rule, 
                 Node< MoveT > const& root, Player player )
@@ -207,24 +106,32 @@ enum Layout { Hierarchie, Circular };
 class GraphvizTree
 {
 public:
+    struct RenderData
+    {
+        char* data;
+        unsigned length;
+        double width;
+        double height;
+    };
+
     GraphvizTree( GVC_t* gv_gvc, Player player );
 
     virtual ~GraphvizTree();
 
-    std::pair< char*, unsigned > render_sub_graph( 
+    RenderData render_sub_graph( 
         DisplayNode _display_node, Layout layout, size_t depth );
     Agraph_t* get_graph() { return gv_graph; }
 
     void set_focus_node( Agnode_t* node ) { gv_focus_node = node; }
-    pointf get_focus_coord() const;
+    Agnode_t* get_node_by_coord( double x, double y );
 protected:
     virtual void set_node_attribute( Agnode_t* gv_node, Player ) = 0;
 
     std::ostringstream value; // reuse allocated memory
     DisplayNode display_node = Stats;
     Agraph_t* gv_graph = nullptr;
-    Agraph_t* gv_subgraph = nullptr;
     Agnode_t* gv_focus_node = nullptr;
+    Agraph_t* gv_subgraph = nullptr;
 private:
     void add_node_to_subgraph( Agnode_t* gv_node, size_t depth );
 
@@ -253,7 +160,6 @@ public:
     float get_exploration() const { return exploration; }
 private:
     float exploration;
-
     void set_node_attribute( Agnode_t* gv_node, Player );
 };
 
@@ -302,6 +208,7 @@ std::unique_ptr< GraphvizTree > build_tree(
 {
     auto tree = std::make_unique< Tree >( gv_gvc, player, exploration );
     add_node( rule, *tree, player, node );
+
     tree->set_focus_node( agfstnode( tree->get_graph()));
 
     return tree;
