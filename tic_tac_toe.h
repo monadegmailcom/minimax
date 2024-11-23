@@ -1,3 +1,4 @@
+#pragma once
 #include "rule.h"
 
 #include <array>

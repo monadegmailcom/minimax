@@ -2,10 +2,9 @@
 #include "game.h"
 #include "tree.h"
 
+
 // for some reasons this has to be defined
 #define RAYGUI_IMPLEMENTATION
-// patch missing declaration because RAYGUI_STANDALONE is not defined
-static float TextToFloat(const char *text);
 #include "raygui.h"
 
 #include <iostream>
@@ -17,34 +16,8 @@ static float TextToFloat(const char *text);
 #include <sstream>
 #include <iomanip>
 
-// patch missing definition because RAYGUI_STANDALONE is not defined
-static float TextToFloat(const char *text)
-{
-    float value = 0.0f;
-    float sign = 1.0f;
-
-    if ((text[0] == '+') || (text[0] == '-'))
-    {
-        if (text[0] == '-') sign = -1.0f;
-        text++;
-    }
-
-    int i = 0;
-    for (; ((text[i] >= '0') && (text[i] <= '9')); i++) value = value*10.0f + (float)(text[i] - '0');
-
-    if (text[i++] != '.') value *= sign;
-    else
-    {
-        float divisor = 10.0f;
-        for (; ((text[i] >= '0') && (text[i] <= '9')); i++)
-        {
-            value += ((float)(text[i] - '0'))/divisor;
-            divisor = divisor*10.0f;
-        }
-    }
-
-    return value;
-}
+// from stb_image_write.h
+extern "C" unsigned char *stbi_write_png_to_mem(const unsigned char *pixels, int stride_bytes, int x, int y, int n, int *out_len);
 
 using namespace std;
 using namespace placeholders;
@@ -60,6 +33,31 @@ float panel_y = 0;
 const float text_box_height = 30;
 float window_height = board_width;
 float window_width = board_width + panel_width;
+
+// returned pointer has to be freed by the caller with free()
+unsigned char* draw_board_png( void (*draw)(), float png_width, int& png_size )
+{
+    RenderTexture2D render_texture = LoadRenderTexture(png_width, png_width);
+    SetTextureFilter(render_texture.texture, TEXTURE_FILTER_BILINEAR);
+    BeginTextureMode(render_texture);
+        ClearBackground(RAYWHITE);
+        draw();
+    EndTextureMode();
+
+    // Save the render texture as PNG in memory
+    Image image = LoadImageFromTexture(render_texture.texture);
+    unsigned char* png_data = stbi_write_png_to_mem(
+        (unsigned char*)image.data, 
+        image.width * 4, 
+        image.width, 
+        image.height, 
+        4, 
+        &png_size
+    );
+    UnloadImage(image);
+
+    return png_data;
+}
 
 void draw_player(
     Player player, int i, int j, Color color, float cell_size, float pos_x = 0, float pos_y = 0)
@@ -143,7 +141,7 @@ DeepRule rule;
 DeepRule initial_rule;
 GameGenerics< ttt::Move > game_generics { rule, initial_rule };
 
-void draw_board( Player* board, optional< Move > const& last_move )
+void draw_board( Player* board, optional< Move > const& last_move, float board_width )
 {
     const float cell_size = board_width / 3;
     for (int i = 0; i < n; i++)
@@ -171,7 +169,7 @@ Rule initial_rule;
 
 GameGenerics< uttt::Move > game_generics { rule, initial_rule };
 
-void draw_board( Rule const& rule, optional< Move > const& last_move )
+void draw_board( Rule const& rule, optional< Move > const& last_move, float board_width )
 {
     const float outer_cell_size = board_width / 3;
     const float inner_cell_size = outer_cell_size / 3;
@@ -464,14 +462,16 @@ public:
         float board_width, float board_height, float shift_x, float shift_y, float zoom )
     {
         UnloadRenderTexture(render_texture);
-        render_texture = LoadRenderTexture(board_width, board_height);
+        float scale = texture.width / board_width;
+        render_texture = LoadRenderTexture(scale * board_width, scale * board_height);
+        SetTextureFilter(render_texture.texture, TEXTURE_FILTER_BILINEAR);
         BeginTextureMode( render_texture );
             ClearBackground(BLANK);
             Camera2D camera = { 
-                .offset = { board_width / 2, board_height / 2 },
+                .offset = { scale * board_width / 2, scale * board_height / 2 },
                 .target = { -shift_x + texture.width / 2.0f, shift_y + texture.height / 2.0f },
                 .rotation = 0.0f,
-                .zoom = zoom * board_width / texture.width};
+                .zoom = zoom * scale * board_width / texture.width};
             BeginMode2D( camera );
                 Rectangle sourceRec = { 0, 0, (float)texture.width, (float)-texture.height };
                 Rectangle destRec = { 0, 0, (float)texture.width, (float)texture.height };
@@ -479,65 +479,15 @@ public:
                 DrawTexturePro(texture, sourceRec, destRec, origin, 0.0f, RAYWHITE);
             EndMode2D();
         EndTextureMode();
-        DrawTexture( render_texture.texture, 0, 0, RAYWHITE);
 
-/*
-        if (width == prev_width && height == prev_height && 
-            shift_x == prev_shift_x && shift_y == prev_shift_y && 
-            zoom == prev_zoom)
-            return;
-
-        prev_width = width;
-        prev_height = height;
-        prev_shift_x = shift_x;
-        prev_shift_y = shift_y;
-        prev_zoom = zoom;
-
-
-        // Create a Cairo surface to render the SVG
-        cairo_surface_t* surface = cairo_image_surface_create( CAIRO_FORMAT_ARGB32, width, height);
-        cairo_t* cr = cairo_create(surface);
-
-        RsvgRectangle viewport = {
-            .x = 0,
-            .y = 0,
-            .width = width,
-            .height = height
-        };
-
-        const double center_x = width / 2;
-        const double center_y = height / 2;
-        cairo_translate(cr, center_x, center_y);
-        cairo_scale(cr, zoom, zoom);
-
-        cairo_translate(cr, shift_x - center_x, shift_y - center_y);
-
-        GError* error = NULL;
-        if (!rsvg_handle_render_document(handle, cr, &viewport, &error ))
-        {
-            ostringstream oss;
-            oss << "Failed to render SVG data: " << error->message;
-            g_error_free(error);
-            cairo_destroy(cr);
-            cairo_surface_destroy(surface);
-            throw runtime_error( oss.str());
-        }
-
-        Image image = {
-            .data = cairo_image_surface_get_data(surface),
-            .width = cairo_image_surface_get_width(surface),
-            .height = cairo_image_surface_get_height(surface),
-            .mipmaps = 1,
-            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-        };
-
-
-        UnloadTexture( texture );
-        texture = LoadTextureFromImage(image);
-
-        cairo_destroy(cr);
-        cairo_surface_destroy(surface);
-*/
+        DrawTexturePro(
+            render_texture.texture,
+            (Rectangle){ 0, 0, (float)render_texture.texture.width, (float)render_texture.texture.height },
+            (Rectangle){ 0, 0, board_width, board_height },
+            (Vector2){ 0, 0 },
+            0.0f,
+            RAYWHITE
+        );
     }
 };
 
@@ -610,7 +560,7 @@ struct Game
     enum ShowIdx { BoardIdx, TreeIdx };
     Menu show_menu = Menu { "show", {"board", "tree"}, TreeIdx };
 
-    DisplayNode display_modes[3] = { Board, SingleMove, Stats };
+    DisplayNode display_modes[3] = { DisplayBoard, DisplayMove, DisplayStats };
     enum DisplayIdx { PNGIdx, MoveIdx, StatsIdx};
     Menu display_menu = Menu { "display", {"board", "move", "stats"}, MoveIdx };
 
@@ -741,11 +691,17 @@ void build_mc_tree( GameGenerics< MoveT >& game_generics, gui::Player& player )
     auto algo = dynamic_cast< montecarlo::Algorithm< MoveT >* >( 
         get_algo( game_generics, player).get());
     auto& root_node = algo->get_root();
-    player.graphviz_tree = montecarlo::build_tree(
-        gv_gvc, game_generics.rule, player.player, algo->get_mcts().exploration, root_node );
+    if (game_menu.selected == TicTacToeIdx)
+        player.graphviz_tree = make_unique< montecarlo::TicTacToeTree >(
+            gv_gvc, player.player, algo->get_mcts().exploration, root_node );
+    else if (game_menu.selected == UltimateTicTacToeIdx)
+        player.graphviz_tree = make_unique< montecarlo::MetaTicTacToeTree >(
+            gv_gvc, player.player, algo->get_mcts().exploration, root_node );
+    else    
+        throw runtime_error( "invalid game (build_mc_tree)");
     gui::Game& game = games[game_menu.selected];
     auto render_data = player.graphviz_tree->render_sub_graph( 
-        game.display_modes[game.display_menu.selected], Circular, player.tree_depth);
+        game.display_modes[game.display_menu.selected], Circular, player.tree_depth );
     player.tree_texture = make_unique< gui::RaylibTexture >( render_data );
 }
 
@@ -1125,6 +1081,8 @@ void show_side_panel()
 
                 if (game.opponent->graphviz_tree && rerender_tree)
                 {
+                    function< void( ostream&, void* ) > print_move;
+
                     auto render_data = game.opponent->graphviz_tree->render_sub_graph( 
                         game.display_modes[game.display_menu.selected], Circular, game.opponent->tree_depth );
                     game.opponent->tree_texture = make_unique< gui::RaylibTexture >( render_data );
@@ -1171,7 +1129,7 @@ void show_board()
     {
         using namespace tic_tac_toe;
 
-        draw_board( rule.board, game_generics.last_move );
+        draw_board( rule.board, game_generics.last_move, board_width);
 
         if (   ui_state == PlayGame 
             && game.winner == not_set
@@ -1210,7 +1168,7 @@ void show_board()
     {
         using namespace meta_tic_tac_toe;
 
-        draw_board( rule, game_generics.last_move );
+        draw_board( rule, game_generics.last_move, board_width );
 
         if (   ui_state == PlayGame 
             && game.winner == not_set

@@ -7,19 +7,18 @@ using namespace std;
 
 GraphvizTree::GraphvizTree( GVC_t* gv_gvc, Player player ) : gv_gvc( gv_gvc ), player( player )
 {
-    gv_graph = agopen((char*)"g", Agstrictdirected, nullptr);
-    if (!gv_graph)
+    gv_graph = agopen((char*)"graph", Agstrictdirected, nullptr);
+    gv_subgraph = agsubg(gv_graph, (char*)"subgraph", true);
+
+    if (!gv_graph || !gv_subgraph)
         throw std::runtime_error( "could not create graph");
     agsafeset( gv_graph, (char*)"bgcolor", (char*)"transparent", (char*)"");
 }
 
 GraphvizTree::~GraphvizTree()
 {
-    if (gv_subgraph)
-    {
-        gvFreeLayout(gv_gvc, gv_subgraph);
-        agclose(gv_subgraph);
-    }
+    gvFreeLayout(gv_gvc, gv_subgraph);
+    agclose(gv_subgraph);
     agclose(gv_graph);
 }
 
@@ -57,11 +56,9 @@ GraphvizTree::RenderData GraphvizTree::render_sub_graph(
 {
     if (!depth)
         throw std::runtime_error( "invalid depth (render_sub_subgraph)");
-    if (gv_subgraph)
-    {
-        gvFreeLayout(gv_gvc, gv_subgraph);
-        agclose(gv_subgraph);
-    }
+
+    gvFreeLayout(gv_gvc, gv_subgraph);
+    agclose(gv_subgraph);
     gv_subgraph = agsubg(gv_graph, (char*)"subgraph", true);
     if (!gv_subgraph)
         throw std::runtime_error( "could not create subgraph (render_subgraph)");
@@ -76,9 +73,6 @@ GraphvizTree::RenderData GraphvizTree::render_sub_graph(
     add_node_to_subgraph( gv_focus_node, depth );
 
     display_node = _display_node;
-    if (!gv_subgraph)
-        throw std::runtime_error( "no subgraph (render)");
-
     agsafeset( gv_focus_node, (char*)"color", (char*)"red", "");
 
     set_node_attribute( agfstnode(gv_subgraph), player );
@@ -118,43 +112,41 @@ Tree::Tree( GVC_t* gv_gvc, Player player, float exploration ) :
 
 void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
 {
-    Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
+    static Stats stats; // recycle memory for move string
+    get_stats( gv_node, stats );
 
+    static ostringstream value; // recycle memory
     value.str("");
-    if (display_node == SingleMove)
-        value << node_data->move;
-    else if (display_node == Board)
+
+    if (display_node == DisplayMove)
+        value << stats.move;
+    else if (display_node == DisplayBoard)
     {
-        /* TODO implement
-            rule.apply_move( child.move, player );
-            rule.undo_move( child.move, player );
-        */
+        // todo
     }
-    else if (display_node == Stats)
+    else if (display_node == DisplayStats)
     {
         const char* const entry_prefix = "<TR><TD ALIGN=\"LEFT\" WIDTH=\"50\">";
         const char* const entry_postfix = "</TD><TD ALIGN=\"RIGHT\" WIDTH=\"50\">";
         const char* const line_postfix = "</TD></TR>";
-        auto e = agfstin( gv_subgraph, gv_node );
-        auto parent = e ? agtail( e ) : nullptr;
-        auto parent_data = parent ? (Data*)aggetrec(parent, "data", 0) : nullptr;
+
         value 
             << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">"
-            << entry_prefix << "move" << entry_postfix << node_data->move << line_postfix
-            << entry_prefix << "points" << entry_postfix << node_data->numerator << " (" 
-            << std::fixed << std::setprecision( 2 ) << node_data->numerator / node_data->denominator << ")" << line_postfix
-            << entry_prefix << "playouts" << entry_postfix << node_data->denominator << line_postfix
-            << entry_prefix << "cbt" << entry_postfix << std::fixed << std::setprecision( 2 ) << node_data->cbt << line_postfix
-            << entry_prefix << "depth" << entry_postfix << node_data->depth << line_postfix
-            << entry_prefix << "size" << entry_postfix << node_data->size << " ("
-            << std::fixed << std::setprecision( 2 ) << (parent_data ? double( node_data->size ) / parent_data->size : 1.0) 
-            << ")" << line_postfix
+            << entry_prefix << "move" << entry_postfix << stats.move << line_postfix
+            << entry_prefix << "points" << entry_postfix << stats.points << " (" 
+            << std::fixed << std::setprecision( 2 ) << stats.points / stats.playouts << ")" << line_postfix
+            << entry_prefix << "playouts" << entry_postfix << stats.playouts << line_postfix
+            << entry_prefix << "cbt" << entry_postfix << std::fixed << std::setprecision( 2 ) << stats.cbt << line_postfix
+            << entry_prefix << "depth" << entry_postfix << stats.depth << line_postfix
             << "</TABLE>";
     }
     else
         throw std::runtime_error( "invalid display node");
 
-    agsafeset( gv_node, (char*)"label", agstrdup_html( gv_subgraph, value.str().data()), "");
+    if (value.str().empty())
+        agsafeset( gv_node, (char*)"label", (char*)"", "");    
+    else
+        agsafeset( gv_node, (char*)"label", agstrdup_html( gv_subgraph, value.str().data()), "");
 
     if (player == player1)
         agsafeset(gv_node, (char*)"shape", (char*)"box", "");
@@ -163,6 +155,86 @@ void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
 
     for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
         set_node_attribute( aghead( e ), Player( -player ));
+}
+
+template< typename MoveT >
+Agnode_t* add_node( Agraph_t* gv_graph, Player player, montecarlo::Node< MoveT > const& node )
+{
+    Agnode_t* gv_node = agnode(gv_graph, nullptr, true);
+
+    Tree::Data* data = (Tree::Data*) agbindrec( gv_node, "data", sizeof(Tree::Data), false);
+    data->depth = 1;
+    data->node = (void*)&node;
+
+    for (montecarlo::Node< MoveT > const& child : node.children)
+    {
+        Agnode_t* gv_child = add_node( gv_graph, Player( -player ), child );
+        agedge( gv_graph, gv_node, gv_child, nullptr, true);
+
+        Tree::Data* child_data = (Tree::Data*)aggetrec(gv_child, "data", 0);
+        if (child_data->depth > data->depth)
+            data->depth = child_data->depth;
+    }
+    if (!node.children.empty())
+        ++data->depth;
+
+    return gv_node;
+}
+
+template< typename MoveT >
+montecarlo::Node< MoveT >* get_parent_node( Agraph_t* gv_graph, Agnode_t* gv_node )
+{
+    auto gv_edge = agfstin( gv_graph, gv_node );
+    if (gv_edge)
+    {
+        Agnode_t* gv_parent = agtail( gv_edge );
+        if (gv_parent)
+        {
+            Tree::Data* parent_data = (Tree::Data*)aggetrec(gv_parent, "data", 0);
+            if (parent_data)
+                return (montecarlo::Node< MoveT >*)parent_data->node;
+        }    
+    }
+    return nullptr;
+}
+
+template< typename MoveT >
+void get_stats( Agraph_t* gv_graph, Agnode_t* gv_node, double exploration, Tree::Stats& stats )
+{
+    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    montecarlo::Node< MoveT > const& node = *(montecarlo::Node< MoveT >*)node_data->node;
+    stats.points = node.numerator;
+    stats.playouts = node.denominator;
+    montecarlo::Node< MoveT >* parent_node = get_parent_node< MoveT >( gv_graph, gv_node );
+    stats.cbt = parent_node ? MCTS< MoveT >::cbt( node, *parent_node, exploration ) : 0.0;
+    stats.depth = node_data->depth;
+    stats.move = to_string( node.move );
+}
+
+TicTacToeTree::TicTacToeTree( 
+    GVC_t* gv_gvc, Player player, float exploration, montecarlo::Node< tic_tac_toe::Move > const& node ) 
+    : Tree( gv_gvc, player, exploration ) 
+{
+    add_node( gv_graph, player, node );
+    gv_focus_node = agfstnode( gv_graph);
+}
+
+void TicTacToeTree::get_stats( Agnode_t* gv_node, Tree::Stats& stats )
+{
+    montecarlo::get_stats< tic_tac_toe::Move >( gv_graph, gv_node, exploration, stats );
+}
+
+MetaTicTacToeTree::MetaTicTacToeTree( 
+    GVC_t* gv_gvc, Player player, float exploration, montecarlo::Node< meta_tic_tac_toe::Move > const& node ) 
+    : Tree( gv_gvc, player, exploration ) 
+{
+    add_node( gv_graph, player, node );
+    gv_focus_node = agfstnode( gv_graph);
+}
+
+void MetaTicTacToeTree::get_stats( Agnode_t* gv_node, Tree::Stats& stats )
+{
+    montecarlo::get_stats< meta_tic_tac_toe::Move >( gv_graph, gv_node, exploration, stats );
 }
 
 } // namespace montecarlo
