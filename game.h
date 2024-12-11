@@ -9,7 +9,7 @@
 
 #include <cassert>
 
-struct Statistic
+/* struct Statistic
 {
     Statistic() : wins( 0 ), draws( 0 ), losses( 0 ) {}
 
@@ -18,8 +18,8 @@ struct Statistic
     size_t losses;
 };
 
-// TODO: do i need this?
-class AccumulateDuration
+ */// TODO: do i need this?
+/* class AccumulateDuration
 {
 public:
     AccumulateDuration( std::chrono::microseconds& duration) : 
@@ -34,15 +34,39 @@ private:
     std::chrono::time_point< std::chrono::steady_clock > start;
     std::chrono::microseconds& duration;
 };
+ */
 
-template< typename MoveT >
 class Algorithm
 {
 public:
-    Algorithm( Player player, GenericRule< MoveT > const& initial_rule ) : 
-        initial_rule( initial_rule.clone()), player( player ) {}
-
+    Algorithm( Player player ) : player( player ) {}
     virtual ~Algorithm() {}
+    std::chrono::microseconds get_duration() const
+    {
+        return duration;
+    }
+
+    std::chrono::time_point< std::chrono::steady_clock > get_start_time() const
+    {
+        return start;
+    }
+
+    virtual void stop() = 0;
+    virtual void reset() = 0;
+protected:
+    const Player player;
+    std::chrono::microseconds duration { 0 };
+    std::chrono::time_point< std::chrono::steady_clock > start;
+};
+
+template< typename MoveT >
+class AlgorithmGenerics : public Algorithm
+{
+public:
+    AlgorithmGenerics( Player player, GenericRule< MoveT > const& initial_rule ) : 
+        Algorithm( player ), initial_rule( initial_rule.clone()) {}
+
+    virtual ~AlgorithmGenerics() {}
 
     std::optional< MoveT > get_move()
     {
@@ -90,42 +114,29 @@ public:
     void reset()
     {
         reset_impl();
-        duration = 0;
+        duration = duration.zero();
         opp_move.reset();
     }
-
-    std::chrono::microseconds get_duration() const
-    {
-        return duration;
-    }
-
-    std::chrono::time_point< std::chrono::steady_clock > get_start_time() const
-    {
-        return start;
-    }
-private:
-    std::chrono::microseconds duration { 0 };
-    std::chrono::time_point< std::chrono::steady_clock > start;
 protected:
     std::optional< MoveT > opp_move;
     std::optional< MoveT > next_move;
     std::future< MoveT > move_future;
     std::unique_ptr< GenericRule< MoveT > > initial_rule;
-    const Player player;
 
-    virtual void reset_impl() = 0;
     virtual void stop_impl() = 0;
+    virtual void reset_impl() = 0;
+
     virtual std::future< MoveT > get_future() = 0;
 };
 
 namespace interactive {
 
 template< typename MoveT >
-class Algorithm : public ::Algorithm< MoveT >
+class Algorithm : public ::AlgorithmGenerics< MoveT >
 {
 public:
     Algorithm( GenericRule< MoveT > const& initial_rule, Player player ) 
-    : ::Algorithm< MoveT >( player, initial_rule ) {}
+    : ::AlgorithmGenerics< MoveT >( player, initial_rule ) {}
 
     void set_move( MoveT const& move )
     {
@@ -173,13 +184,13 @@ struct ChooseBest : public ChooseMove< MoveT >
 };
 
 template< typename MoveT >
-class Algorithm : public ::Algorithm< MoveT >
+class Algorithm : public ::AlgorithmGenerics< MoveT >
 {
 public:
     Algorithm( GenericRule< MoveT > const& initial_rule, Player player, ChooseMove< MoveT >* choose_move, 
-               size_t simulations, double exploration, bool trace ) :
-        ::Algorithm< MoveT >( player, initial_rule ), choose_move( choose_move ), simulations( simulations ),
-        mcts( initial_rule, exploration ), trace( trace ) 
+               size_t simulations, double exploration ) :
+        ::AlgorithmGenerics< MoveT >( player, initial_rule ), choose_move( choose_move ), simulations( simulations ),
+        mcts( initial_rule, exploration ) 
     {}
 
     Node< MoveT > const& get_root()
@@ -220,22 +231,20 @@ private:
     std::unique_ptr< ChooseMove< MoveT > > choose_move;
     size_t simulations;
     MCTS< MoveT > mcts;
-    const bool trace;
 };
 
 } // namespace montecarlo {
 
 template< typename MoveT >
-class MinimaxAlgorithm : public Algorithm< MoveT >
+class MinimaxAlgorithm : public AlgorithmGenerics< MoveT >
 {
 public:
     MinimaxAlgorithm( GenericRule< MoveT > const& initial_rule, Player player,
                       std::function< double (GenericRule< MoveT >&, Player) > eval,
                       Recursion< MoveT >* recursion,
-                      std::function< MoveT const& (VertexList< MoveT > const&) > choose_move,
-                      bool trace ) : 
-        ::Algorithm< MoveT >( player, initial_rule ), minimax( initial_rule, eval, *recursion ),
-        choose_move( choose_move ), recursion( recursion ), trace( trace )
+                      std::function< MoveT const& (VertexList< MoveT > const&) > choose_move ) : 
+        ::AlgorithmGenerics< MoveT >( player, initial_rule ), minimax( initial_rule, eval, *recursion ),
+        choose_move( choose_move ), recursion( recursion )
     {}
 private:
     std::future< MoveT > get_future()
@@ -270,18 +279,16 @@ private:
     Minimax< MoveT > minimax;
     std::function< MoveT const& (VertexList< MoveT > const&) > choose_move;
     std::unique_ptr< Recursion< MoveT > > recursion;
-    const bool trace;
     double value = 0.0;
 };
 
 template< typename MoveT >
-class NegamaxAlgorithm : public Algorithm< MoveT >
+class NegamaxAlgorithm : public AlgorithmGenerics< MoveT >
 {
 public:
     NegamaxAlgorithm( GenericRule< MoveT > const& initial_rule, Player player, size_t depth,
-        ReOrder< MoveT > reorder, std::function< double (GenericRule< MoveT >&, Player) > eval,
-        bool trace ) : 
-        ::Algorithm< MoveT >( player, initial_rule ), negamax( initial_rule, eval, reorder ), depth( depth ), trace( trace ) {}
+        ReOrder< MoveT > reorder, std::function< double (GenericRule< MoveT >&, Player) > eval ) : 
+        ::AlgorithmGenerics< MoveT >( player, initial_rule ), negamax( initial_rule, eval, reorder ), depth( depth ) {}
 private:
     std::future< MoveT > get_future()
     {
@@ -314,7 +321,6 @@ private:
 
     Negamax< MoveT > negamax;
     size_t depth;
-    const bool trace;
     double value = .0;
 };
 

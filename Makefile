@@ -33,7 +33,7 @@ TREE_DEP=tree.h $(MINIMAX_DEP) $(NEGAMAX_DEP) $(MONTECARLO_DEP)
 GAME_DEP=game.h $(TREE_DEP)
 TIC_TAC_TOE_DEP=tic_tac_toe.h $(RULE_DEP)
 META_TIC_TAC_TOE_DEP=meta_tic_tac_toe.h $(TIC_TAC_TOE_DEP)
-RAYLIB_DEP=raylib_interface.h $(META_TIC_TAC_TOE_DEP) $(GAME_DEP)
+RAYLIB_DEP=gui/raylib_interface.h $(META_TIC_TAC_TOE_DEP) $(GAME_DEP)
 SOURCES=player.cpp main.cpp tic_tac_toe.cpp meta_tic_tac_toe.cpp tree.cpp raylib_interface.cpp
 ODIR=obj
 OBJS=$(patsubst %.cpp,$(ODIR)/%.o,$(SOURCES))
@@ -44,7 +44,7 @@ $(ODIR)/player.o: player.cpp player.h
 	$(CC) $(FLAGS) -o $@ $<
 $(ODIR)/main.o: main.cpp $(META_TIC_TAC_TOE_DEP) $(MONTECARLO_DEP) $(GAME_DEP) $(RAYLIB_DEP)
 	$(CC) $(FLAGS) -o $@ $<
-$(ODIR)/raylib_interface.o: raylib_interface.cpp $(RAYLIB_DEP)
+$(ODIR)/raylib_interface.o: gui/raylib_interface.cpp $(RAYLIB_DEP)
 	$(CC) $(FLAGS) -o $@ $<
 $(ODIR)/tic_tac_toe.o: tic_tac_toe.cpp $(TIC_TAC_TOE_DEP)
 	$(CC) $(FLAGS) -o $@ $<

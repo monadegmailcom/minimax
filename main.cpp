@@ -1,6 +1,6 @@
 #include "meta_tic_tac_toe.h"
 #include "game.h"
-#include "raylib_interface.h"
+#include "gui/raylib_interface.h"
 
 #include <fstream>
 #include <vector>
