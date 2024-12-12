@@ -51,7 +51,7 @@ void GraphvizTree::add_node_to_subgraph( Agnode_t* gv_node, size_t depth )
     }
 }
 
-GraphvizTree::RenderData GraphvizTree::render_sub_graph( 
+RenderData GraphvizTree::render_sub_graph( 
     DisplayNode _display_node, Layout layout, size_t depth )
 {
     if (!depth)

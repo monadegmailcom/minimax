@@ -1,3 +1,5 @@
+#pragma once
+
 #include "negamax.h"
 #include "minimax.h"
 #include "montecarlo.h"
@@ -16,17 +18,17 @@
 enum DisplayNode { DisplayBoard, DisplayMove, DisplayStats };
 enum Layout { Hierarchie, Circular };
 
+struct RenderData
+{
+    char* data;
+    unsigned length;
+    double width;
+    double height;
+};
+
 class GraphvizTree
 {
 public:
-    struct RenderData
-    {
-        char* data;
-        unsigned length;
-        double width;
-        double height;
-    };
-
     GraphvizTree( GVC_t* gv_gvc, Player player );
 
     virtual ~GraphvizTree();

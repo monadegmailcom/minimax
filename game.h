@@ -1,3 +1,5 @@
+#pragma once
+
 #include "negamax.h"
 #include "minimax.h"
 #include "montecarlo.h"

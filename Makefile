@@ -8,9 +8,11 @@ HOMEBREW=/opt/homebrew/Cellar
 BOOST_PATH=$(HOMEBREW)/boost/1.85.0
 GRAPHVIZ_PATH=$(HOMEBREW)/graphviz/12.2.0
 
+PROJECT_ROOT=$(shell pwd)
+
 # use for raylib from source
-RAYLIB_PATH=../raylib
-RAYGUI_PATH=../raygui
+RAYLIB_PATH=$(PROJECT_ROOT)/../raylib
+RAYGUI_PATH=$(PROJECT_ROOT)/../raygui
 
 # use for universal binary does not work at the moment because glfw has to be 
 # compiled with the same flags
@@ -33,8 +35,13 @@ TREE_DEP=tree.h $(MINIMAX_DEP) $(NEGAMAX_DEP) $(MONTECARLO_DEP)
 GAME_DEP=game.h $(TREE_DEP)
 TIC_TAC_TOE_DEP=tic_tac_toe.h $(RULE_DEP)
 META_TIC_TAC_TOE_DEP=meta_tic_tac_toe.h $(TIC_TAC_TOE_DEP)
-RAYLIB_DEP=gui/raylib_interface.h $(META_TIC_TAC_TOE_DEP) $(GAME_DEP)
-SOURCES=player.cpp main.cpp tic_tac_toe.cpp meta_tic_tac_toe.cpp tree.cpp raylib_interface.cpp
+HELPER_DEP=gui/helper.h
+TEXTURE_DEP=gui/texture.h $(TREE_DEP)
+ALGO_DEP=gui/algo.h $(GAME_DEP) 
+GUI_PLAYER_DEP=gui/player.h $(HELPER_DEP)
+GUI_GAME_DEP=gui/game.h $(GUI_PLAYER_DEP)
+RAYLIB_DEP=gui/raylib_interface.h $(HELPER_DEP) $(TEXTURE_DEP) $(META_TIC_TAC_TOE_DEP) $(GAME_DEP)
+SOURCES=player.cpp main.cpp tic_tac_toe.cpp meta_tic_tac_toe.cpp tree.cpp gui/raylib_interface.cpp gui/algo.cpp gui/helper.cpp gui/texture.cpp gui/player.cpp gui/game.cpp
 ODIR=obj
 OBJS=$(patsubst %.cpp,$(ODIR)/%.o,$(SOURCES))
 
@@ -44,7 +51,17 @@ $(ODIR)/player.o: player.cpp player.h
 	$(CC) $(FLAGS) -o $@ $<
 $(ODIR)/main.o: main.cpp $(META_TIC_TAC_TOE_DEP) $(MONTECARLO_DEP) $(GAME_DEP) $(RAYLIB_DEP)
 	$(CC) $(FLAGS) -o $@ $<
-$(ODIR)/raylib_interface.o: gui/raylib_interface.cpp $(RAYLIB_DEP)
+$(ODIR)/gui/algo.o: gui/algo.cpp $(ALGO_DEP)
+	$(CC) $(FLAGS) -o $@ $<
+$(ODIR)/gui/player.o: gui/player.cpp $(GUI_PLAYER_DEP)
+	$(CC) $(FLAGS) -o $@ $<
+$(ODIR)/gui/helper.o: gui/helper.cpp $(HELPER_DEP)
+	$(CC) $(FLAGS) -o $@ $<
+$(ODIR)/gui/texture.o: gui/texture.cpp $(TEXTURE_DEP)
+	$(CC) $(FLAGS) -o $@ $<
+$(ODIR)/gui/game.o: gui/game.cpp $(GUI_GAME_DEP)
+	$(CC) $(FLAGS) -o $@ $<
+$(ODIR)/gui/raylib_interface.o: gui/raylib_interface.cpp $(RAYLIB_DEP)
 	$(CC) $(FLAGS) -o $@ $<
 $(ODIR)/tic_tac_toe.o: tic_tac_toe.cpp $(TIC_TAC_TOE_DEP)
 	$(CC) $(FLAGS) -o $@ $<
