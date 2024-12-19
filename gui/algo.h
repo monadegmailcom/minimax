@@ -15,27 +15,36 @@ class Algo
 public:
     Algo( ::Player );
     virtual ~Algo();
-    virtual void reset();
-    virtual void build_tree( GVC_t* gv_gvc, DisplayNode display_node) = 0;
+    virtual void build_tree( GVC_t* gv_gvc ) = 0;
     virtual Algorithm* get_algorithm() = 0;
     virtual void show_side_panel(DropDownMenu& dropdown_menu) = 0;
 
-    size_t get_tree_depth() const;
-    void inc_tree_depth();
-    void dec_tree_depth();
     bool has_texture() const;
     void draw_texture( 
         float board_width, float board_height, float shift_x, float shift_y, float zoom );
-    void reset_texture( DisplayNode, Layout );
+    void reset_texture();
     void refocus_tree( 
         float board_width, float board_height, float shift_x, float shift_y, 
-        float zoom, double x, double y, DisplayNode display_node, Layout layout );
+        float zoom, double x, double y );
+    // return true if the tree controls are changed
+    virtual bool show_tree_controls(DropDownMenu&);
+    virtual ChooseNodes* get_choose_best_count_nodes() = 0;
+    virtual ChooseNodes* get_choose_best_percentage_nodes() = 0;
 protected:
+    void reset();
+
     std::unique_ptr< RaylibTexture > tree_texture;
     std::unique_ptr< GraphvizTree > graphviz_tree;
 
     ::Player player;
-    size_t tree_depth = 2;
+    Spinner tree_depth = Spinner( "tree depth", 2, 1, 10 );
+    enum DisplayIdx { PNGIdx, MoveIdx, StatsIdx};
+    DisplayNode display_modes[3] = { DisplayBoard, DisplayMove, DisplayStats };
+    Menu display_menu = Menu { "display", {"board", "move", "stats"}, MoveIdx };
+    enum ShowNodesIdx { AllIdx, BestCountIdx, BestPercentageIdx };
+    Menu show_nodes = Menu { "show nodes", {"all", "best count", "best percentage"}, 0 };
+    Spinner best_count = Spinner( "best count", 3, 1, 10 );
+    Spinner best_percentage = Spinner( "best percentage", 50, 1, 100 );
 };
 
 template< typename MoveT >
@@ -43,20 +52,18 @@ class AlgoGenerics : public Algo
 {
 public:
     AlgoGenerics( ::Player player ) : Algo( player ) {}
-    void reset()
-    {
-        // release resources
-        Algo::reset();
-        algorithm.reset(); 
-    }
+    virtual ~AlgoGenerics() {}
     void stop_algo()
     {
         if (algorithm)
         {
             // request algo to stop and wait until it finishes
             algorithm->stop();
+
             // release algo resource
             algorithm.reset();
+
+            Algo::reset();
         }
     }
     Algorithm* get_algorithm()
@@ -74,6 +81,16 @@ class Human : public AlgoGenerics< MoveT >
 {
 public:
     Human( ::Player player ) : AlgoGenerics< MoveT >( player ) {}
+protected:
+    void start_game( GenericRule< MoveT >& rule )
+    {
+        this->algorithm.reset( new interactive::Algorithm< MoveT >( rule, this->player ));
+    }
+    void build_tree( GVC_t* ) {}
+    void show_side_panel(DropDownMenu& ) {}
+    bool show_tree_controls(DropDownMenu&) { return false; }
+    ChooseNodes* get_choose_best_count_nodes() { return nullptr; }
+    ChooseNodes* get_choose_best_percentage_nodes() { return nullptr; }
 };
 
 template< typename MoveT >
@@ -124,7 +141,9 @@ public:
         show_spinner( this->depth );
         dropdown_menu.add( reorder_menu );
     }
-    void build_tree( GVC_t* gv_gvc, DisplayNode display_node) {}
+    void build_tree( GVC_t* gv_gvc ) {}
+    ChooseNodes* get_choose_best_count_nodes() { return nullptr; }
+    ChooseNodes* get_choose_best_percentage_nodes() { return nullptr; }
 protected:
     NegamaxAlgorithm< MoveT >* negamax_algorithm = nullptr;
     Menu reorder_menu { "reorder moves", {"shuffle", "reorder by score"}, 1 };
@@ -177,7 +196,9 @@ public:
             rule, this->player, this->get_eval_function(), get_recursion_function(), get_choose_move_function());
         this->algorithm.reset( minimax_algorithm );
     }
-    void build_tree( GVC_t* gv_gvc, DisplayNode display_node) {}
+    void build_tree( GVC_t* gv_gvc ) {}
+    ChooseNodes* get_choose_best_count_nodes() { return nullptr; }
+    ChooseNodes* get_choose_best_percentage_nodes() { return nullptr; }
 protected:
     Spinner max_vertices = Spinner( "max vertices", 280000, 1, 1000000 );
     enum RecursionIdx { MaxDepthIdx, MaxVerticesIdx };
@@ -242,18 +263,21 @@ public:
             rule, this->player, this->get_choose_move_function(), simulations.value, 
             exploration_factor.value ));
     }
-    void build_tree( GVC_t* gv_gvc, DisplayNode display_node)
-    {
-        if (!this->algorithm)
-            throw std::runtime_error( "invalid algo (build_tree)");
-
-        auto m_algo = dynamic_cast< montecarlo::Algorithm< MoveT >* >( this->get_algorithm());
-        this->graphviz_tree.reset( new montecarlo::TicTacToeTree(
-            gv_gvc, this->player, m_algo->get_mcts().exploration, m_algo->get_root()));
-        this->reset_texture( display_node, Circular );
-    }
 protected:
     virtual montecarlo::ChooseMove< MoveT >* get_choose_move_function() = 0;
+
+    ChooseNodes* get_choose_best_count_nodes()
+    {
+        auto tree = dynamic_cast< montecarlo::Tree* >( this->graphviz_tree.get());  
+        if (!tree)
+            throw std::runtime_error( "invalid tree (get_choose_best_count_nodes)");
+        return new montecarlo::ChooseBestCountNodes( 
+            *tree, this->best_count.value );
+    }
+    ChooseNodes* get_choose_best_percentage_nodes()
+    {
+        return nullptr;
+    }
 
     void show_side_panel(DropDownMenu& dropdown_menu)
     {
@@ -272,6 +296,7 @@ class TicTacToeMontecarlo : public Montecarlo< tic_tac_toe::Move >
 public: 
     TicTacToeMontecarlo( ::Player );
 protected:
+    void build_tree( GVC_t* gv_gvc );
     montecarlo::ChooseMove< tic_tac_toe::Move >* get_choose_move_function();
 };
 
@@ -279,6 +304,7 @@ class MetaTicTacToeMontecarlo : public Montecarlo< meta_tic_tac_toe::Move >
 {
 public: 
     MetaTicTacToeMontecarlo( ::Player );
+    void build_tree( GVC_t* gv_gvc );
 protected:
     montecarlo::ChooseMove< meta_tic_tac_toe::Move >* get_choose_move_function();
 };

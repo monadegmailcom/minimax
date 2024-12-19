@@ -89,6 +89,190 @@ optional< uint8_t > handle_board_event(
 
 Game::~Game() {}
 
+void Game::show_graph( MouseEvent& mouse_event)
+{
+    Player& player = *opponent;
+    if (player.get_algo().has_texture())
+    {
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) 
+        {
+            mouse_event.last_mouse_position = GetMousePosition();
+            double click_time = GetTime();
+            const float time_threshold = 0.3f;
+            if (click_time - mouse_event.last_click_time < time_threshold)
+                mouse_event.double_click = true;
+            else
+                mouse_event.double_click = false;
+
+            mouse_event.last_click_time = click_time;
+
+            if (CheckCollisionPointRec( 
+                    mouse_event.last_mouse_position, 
+                    {0, 0, board_width, board_width}))
+                mouse_event.dragging = true;
+        }
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && mouse_event.dragging)
+        {
+            Vector2 current_mouse_pos = GetMousePosition();
+            const float distance_threshold = 5.0f;
+            // clicked and not dragged?
+            if (std::abs(current_mouse_pos.x - mouse_event.last_mouse_position.x) < distance_threshold &&
+                std::abs(current_mouse_pos.y - mouse_event.last_mouse_position.y) < distance_threshold &&
+                mouse_event.double_click)
+            {
+                player.get_algo().refocus_tree( 
+                    board_width, board_width, 
+                    mouse_event.position.x, mouse_event.position.y, mouse_event.scale,
+                    current_mouse_pos.x, current_mouse_pos.y );
+                mouse_event = MouseEvent();
+            }
+
+            mouse_event.dragging = false;
+        }
+        
+        if (mouse_event.dragging) 
+        {
+            const Vector2 current_mouse_position = GetMousePosition();
+            const Vector2 delta = {current_mouse_position.x - mouse_event.last_mouse_position.x,
+                            current_mouse_position.y - mouse_event.last_mouse_position.y };
+            mouse_event.position.x += delta.x;
+            mouse_event.position.y += delta.y;
+            mouse_event.last_mouse_position = current_mouse_position;
+        }
+
+        const float wheel = GetMouseWheelMove();
+        if (wheel != 0) 
+        {
+            mouse_event.scale += wheel * 0.1f;
+            // Prevent zooming out too much
+            if (mouse_event.scale < 0.1f) 
+                mouse_event.scale = 0.1f; 
+        }
+
+        player.get_algo().draw_texture( 
+            board_width, board_width, mouse_event.position.x, mouse_event.position.y, mouse_event.scale);
+    }
+}
+
+void Game::show_side_panel()
+{
+    DropDownMenu dropdown_menu;
+
+    panel_y = panel_spacer;
+
+    if (ui_state == ConfigureGame)
+    {
+        show_label( "mode", "configure" );
+        dropdown_menu.add( game_menu );
+        if (show_button( "toggle player", current_player->name ))
+            std::swap( current_player, opponent );
+                
+        dropdown_menu.add( current_player->algo_menu );
+        current_player->get_algo().show_side_panel( dropdown_menu);
+
+        dropdown_menu.add( play_mode_menu );
+
+        if (show_button( "start game" ))
+        {
+            start_game();
+            on_hold = (   play_mode_menu.selected == SingleStepPlayIdx
+                        && current_player->algo_menu.selected != Player::HumanIdx);
+            show_menu.selected = BoardIdx;
+            ui_state = PlayGame;
+        }
+    }
+    else if (ui_state == PlayGame)
+    {
+        const bool game_finished = game_has_finished();
+        const bool waiting_for_move = !on_hold && !game_finished;
+        if (waiting_for_move)
+            process_move();
+
+        const char* button_text = 0;
+        static std::string status_text;
+        if (winner == current_player->player)
+        {
+            status_text = current_player->name + " wins";
+            button_text = "back";
+        }
+        else if (winner == opponent->player)
+        {
+            status_text = opponent->name + " wins";
+            button_text = "back";
+        }
+        else if (game_finished)
+        {
+            status_text = "draw";
+            button_text = "back";
+        }
+        else
+        {
+            status_text = current_player->name + "'s turn";
+            button_text = "abort game";
+        }
+
+        show_label( "mode", play_mode_menu.items[play_mode_menu.selected]);
+        
+        current_player->show_game_info( waiting_for_move );
+        opponent->show_game_info( false );
+
+        show_label( "status", status_text.c_str());
+
+        if (play_mode_menu.selected == SingleStepPlayIdx)
+        {
+            dropdown_menu.add( show_menu );
+
+            if (show_menu.selected == TreeIdx)
+            {
+                auto& algo = opponent->get_algo();
+                bool tree_controls_changed = algo.show_tree_controls( dropdown_menu);
+                
+                if (tree_controls_changed)
+                {
+                    std::cout << "tree controls changed" << std::endl;
+                    algo.reset_texture();
+                    mouse_event = MouseEvent();
+                }
+            }
+
+            {
+                DisableGui disable_gui( false );
+                if (!on_hold)
+                    disable_gui();
+
+                if (show_button( "next move" ))
+                    on_hold = false;
+            }
+        }
+        // TODO: batch mode not yet implemented
+        else if (play_mode_menu.selected == BatchPlayIdx)
+        {}
+
+        if (show_button( button_text))
+        {
+            stop_game();
+
+            // reset current player to player1
+            if (current_player->player != ::player1)
+                std::swap( current_player, opponent );
+
+            mouse_event = MouseEvent();
+
+            ui_state = ConfigureGame;
+        }
+    }
+}
+
+void Game::show_main_panel()
+{
+    if (   ui_state == ConfigureGame
+        || opponent->algo_menu.selected == gui::Player::HumanIdx 
+        || show_menu.selected == gui::Game::BoardIdx)
+        show_board( ui_state );
+    else if (show_menu.selected == gui::Game::TreeIdx)
+        show_graph( mouse_event );
+}
+
 TicTacToe::TicTacToe() : GameGenerics< tic_tac_toe::Move >( 
     new TicTacToePlayer( "player x", ::player1 ), 
     new TicTacToePlayer( "player o", ::player2 ),
@@ -123,27 +307,27 @@ optional< tic_tac_toe::Move > TicTacToe::get_move()
 
 void TicTacToe::process_play_move( tic_tac_toe::Move const& move )
 {
-    if (dynamic_cast< tic_tac_toe::Rule* >( rule.get())->board[move] != not_set)
-        rule->undo_move( move, current_player->player );
-    else 
-        rule->apply_move( move, current_player->player );
-    
+    auto algo = dynamic_cast< interactive::Algorithm< tic_tac_toe::Move >* >( 
+        current_player->get_algo().get_algorithm());
+    if (!algo)
+        throw runtime_error( "invalid interactive algorithm");
+
+    algo->set_move( move );
     winner = rule->get_winner();
 }
 
 void TicTacToe::process_config_move( tic_tac_toe::Move const& move )
 {
-    auto algo = dynamic_cast< interactive::Algorithm< tic_tac_toe::Move >* >( 
-        current_player->get_algo().get_algorithm());
-    if (!algo)
-        throw runtime_error( "invalid interactive algorithm");
-    algo->set_move( move );
+    if (dynamic_cast< tic_tac_toe::Rule* >( rule.get())->board[move] != not_set)
+        rule->undo_move( move, current_player->player );
+    else 
+        rule->apply_move( move, current_player->player );
 }
 
 void TicTacToe::reset()
 {
-    GameGenerics::reset();
     rule.reset( new tic_tac_toe::DeepRule());
+    GameGenerics::reset();
 }
 
 MetaTicTacToe::MetaTicTacToe() : GameGenerics< meta_tic_tac_toe::Move >( 
@@ -192,6 +376,16 @@ u_int8_t MetaTicTacToe::cell_indices_to_move( pair< int, int > const& cell_indic
 
 optional< meta_tic_tac_toe::Move > MetaTicTacToe::get_move() 
 {
+    if (ui_state == PlayGame)
+        // indicate valid outer board(s)
+        for (meta_tic_tac_toe::Move move : valid_moves)
+        {
+            div_t d = div( move, meta_tic_tac_toe::n * meta_tic_tac_toe::n);
+            div_t ij = div( d.quot, meta_tic_tac_toe::n );
+
+            draw_box( ij.quot, ij.rem, RED, board_width / 3, 0, 0, 2 );
+        }
+
     return handle_board_event( 
         dynamic_cast< meta_tic_tac_toe::Rule* >( rule.get())->board.data(), 
         valid_moves, current_player->player, cell_indices_to_move, meta_tic_tac_toe::n * meta_tic_tac_toe::n);
@@ -199,38 +393,27 @@ optional< meta_tic_tac_toe::Move > MetaTicTacToe::get_move()
 
 void MetaTicTacToe::process_play_move( meta_tic_tac_toe::Move const& move )
 {
-    if (dynamic_cast< meta_tic_tac_toe::Rule* >( rule.get())->board.data()[move] != not_set)
-        rule->undo_move( move, current_player->player );
-    else 
-        rule->apply_move( move, current_player->player );
-    
+    auto algo = dynamic_cast< interactive::Algorithm< meta_tic_tac_toe::Move >* >( 
+        current_player->get_algo().get_algorithm());
+    if (!algo)
+        throw runtime_error( "invalid interactive algorithm");
+ 
+    algo->set_move( move );    
     winner = rule->get_winner();
 }
 
 void MetaTicTacToe::process_config_move( meta_tic_tac_toe::Move const& move )
 {
-    // indicate valid outer board(s)
-    for (meta_tic_tac_toe::Move move : valid_moves)
-    {
-        div_t d = div( move, meta_tic_tac_toe::n * meta_tic_tac_toe::n);
-        div_t ij = div( d.quot, meta_tic_tac_toe::n );
-
-        draw_box( ij.quot, ij.rem, RED, board_width / 3, 0, 0, 2 );
-    }
-
-    if (move)
-    {
-        auto algo = dynamic_cast< interactive::Algorithm< meta_tic_tac_toe::Move >* >( 
-            current_player->get_algo().get_algorithm());
-        if (!algo)
-            throw runtime_error( "invalid interactive algorithm");
-        algo->set_move( move );
-    }
+    if (dynamic_cast< meta_tic_tac_toe::Rule* >( rule.get())->board.data()[move] != not_set)
+        rule->undo_move( move, current_player->player );
+    else 
+        rule->apply_move( move, current_player->player );
 }
+
 void MetaTicTacToe::reset()
 {
-    GameGenerics::reset();
     rule.reset( new meta_tic_tac_toe::Rule());
+    GameGenerics::reset();
 }
 
 } // namespace gui {

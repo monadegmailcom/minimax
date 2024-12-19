@@ -5,6 +5,15 @@
 
 using namespace std;
 
+void ChooseAllNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t* node )
+{
+    for (auto e = agfstout(graph, node); e; e = agnxtout(graph, e)) 
+    {   
+        agsubnode(sub_graph, aghead( e ), true);
+        agsubedge(sub_graph, e, true);
+    }
+}
+
 GraphvizTree::GraphvizTree( GVC_t* gv_gvc, Player player ) : gv_gvc( gv_gvc ), player( player )
 {
     gv_graph = agopen((char*)"graph", Agstrictdirected, nullptr);
@@ -38,21 +47,19 @@ Agnode_t* GraphvizTree::get_node_by_coord( double x, double y )
     return nullptr;
 }
 
-void GraphvizTree::add_node_to_subgraph( Agnode_t* gv_node, size_t depth )
+void GraphvizTree::add_node_to_subgraph( 
+    Agnode_t* gv_node, size_t depth, ChooseNodes& choose_nodes )
 {
-    agsubnode(gv_subgraph, gv_node, true);
     --depth;
     if (!depth)
         return;
-    for (auto e = agfstout(gv_graph, gv_node); e; e = agnxtout(gv_graph, e)) 
-    {
-        agsubedge(gv_subgraph, e, true);
-        add_node_to_subgraph( aghead( e ), depth );
-    }
+    choose_nodes( gv_graph, gv_subgraph, gv_node );
+    for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
+        add_node_to_subgraph( aghead( e ), depth, choose_nodes );
 }
 
 RenderData GraphvizTree::render_sub_graph( 
-    DisplayNode _display_node, Layout layout, size_t depth )
+    DisplayNode _display_node, Layout layout, size_t depth, ChooseNodes& choose_nodes )
 {
     if (!depth)
         throw std::runtime_error( "invalid depth (render_sub_subgraph)");
@@ -63,6 +70,7 @@ RenderData GraphvizTree::render_sub_graph(
     if (!gv_subgraph)
         throw std::runtime_error( "could not create subgraph (render_subgraph)");
     
+    agsubnode(gv_subgraph, gv_focus_node, true);
     auto gv_edge = agfstin( gv_graph, gv_focus_node );
     if (gv_edge)
     {
@@ -70,7 +78,7 @@ RenderData GraphvizTree::render_sub_graph(
         agsubedge(gv_subgraph, gv_edge, true);
     }
     
-    add_node_to_subgraph( gv_focus_node, depth );
+    add_node_to_subgraph( gv_focus_node, depth, choose_nodes );
 
     display_node = _display_node;
     agsafeset( gv_focus_node, (char*)"color", (char*)"red", "");
@@ -105,6 +113,39 @@ RenderData GraphvizTree::render_sub_graph(
 
 namespace montecarlo
 {
+
+ChooseBestCountNodes::ChooseBestCountNodes( Tree& tree, size_t best_count )
+: best_count( best_count ), tree( tree ) {}
+
+void ChooseBestCountNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t* node )
+{
+    // copy all outgoing edges
+    edges.clear();
+    for (auto e = agfstout(graph, node); e; e = agnxtout(graph, e)) 
+        edges.push_back( e );
+
+    // sort edge heads descending by playouts
+    sort( edges.begin(), edges.end(), 
+        [this]( Agedge_t* lhs, Agedge_t* rhs ) 
+        {
+            this->tree.get_stats( aghead( lhs ), this->stats );
+            const size_t lhs_playouts = this->stats.playouts;
+            this->tree.get_stats( aghead( rhs ), this->stats );
+            const size_t rhs_playouts = this->stats.playouts;
+            return lhs_playouts > rhs_playouts;
+        });
+    
+    // add first best_count edges to subgraph
+    size_t count = best_count;
+    for (auto e : edges)
+    {
+        if (!count)
+            break;
+        --count;
+        agsubnode(sub_graph, aghead( e ), true);
+        agsubedge(sub_graph, e, true);
+    }
+}
 
 Tree::Tree( GVC_t* gv_gvc, Player player, float exploration ) :
     GraphvizTree( gv_gvc, player ), exploration( exploration )

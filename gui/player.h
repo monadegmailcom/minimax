@@ -23,7 +23,7 @@ class PlayerGenerics : public Player
 public:
     PlayerGenerics( std::string const& name, ::Player player ) 
         : Player( name, player ) {}
-
+    virtual ~PlayerGenerics() {}
     AlgoGenerics< MoveT >& get_algo_generic()
     {
         return *algos[algo_menu.selected];
@@ -37,14 +37,12 @@ public:
     void show_game_info( bool ticking )
     {
         Panel panel( name.c_str());
-        auto algorithm = algos[algo_menu.selected]->algorithm.get();
-        if (!algorithm)
-            return;
-        std::chrono::microseconds duration = algorithm->get_duration();
+        auto& algorithm = *(algos[algo_menu.selected]->algorithm);
+        std::chrono::microseconds duration = algorithm.get_duration();
         
         if (ticking)
             duration += std::chrono::duration_cast< std::chrono::microseconds >( 
-                std::chrono::steady_clock::now() - algorithm->get_start_time());
+                std::chrono::steady_clock::now() - algorithm.get_start_time());
 
         show_label( "algorithm", algo_menu.items[algo_menu.selected]);
         const ldiv_t min = ldiv( duration.count(), 60 * 1000000);
@@ -55,11 +53,6 @@ public:
         stream << std::setfill( '0' ) << std::setw( 2 ) << min.quot << ":" 
                << std::setw( 2 ) << sec.quot << "." << std::setw( 1 ) << dsec;  
         show_label( "accumulated time", stream.str().c_str());
-    }
-    void reset()
-    {
-        for (auto& algo : algos)
-            algo->reset();
     }
 protected:
     std::unique_ptr< AlgoGenerics< MoveT > > algos[algo_count];

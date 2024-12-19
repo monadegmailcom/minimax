@@ -105,21 +105,16 @@ void show()
 
     games[TicTacToeIdx].reset( new gui::TicTacToe());
     games[UltimateTicTacToeIdx].reset( new gui::MetaTicTacToe());
-
+    
     while (!WindowShouldClose())
     {
         RaylibRender raylib_render;
+
         handleWindowResize();
 
         gui::Game& game = *games[game_menu.selected];
         game.show_side_panel();
-        
-        if (   ui_state == ConfigureGame
-            || game.opponent->algo_menu.selected == gui::Player::HumanIdx 
-            || game.show_menu.selected == gui::Game::BoardIdx)
-            game.show_board( ui_state );
-        else if (game.show_menu.selected == gui::Game::TreeIdx)
-            game.show_graph( mouse_event );
+        game.show_main_panel();
     }
 
     gvFreeContext(gv_gvc);

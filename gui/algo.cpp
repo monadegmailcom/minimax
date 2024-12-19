@@ -18,14 +18,28 @@ void Algo::reset()
     graphviz_tree.reset();
 }    
 
-size_t Algo::get_tree_depth() const 
-{ return tree_depth; }
+bool Algo::show_tree_controls(DropDownMenu& dropdown_menu)
+{
+    Panel panel( "tree controls" );
 
-void Algo::inc_tree_depth() 
-{ ++tree_depth; }
+    const int prev_tree_depth = tree_depth.value;
+    const int prev_best_count = best_count.value;
+    const int prev_best_percentage = best_percentage.value;
 
-void Algo::dec_tree_depth() 
-{ if (tree_depth > 1) --tree_depth; }
+    show_spinner( tree_depth );
+    dropdown_menu.add( display_menu );
+    dropdown_menu.add( show_nodes );
+    if (show_nodes.selected == BestCountIdx)
+        show_spinner( best_count );
+    else if (show_nodes.selected == BestPercentageIdx)
+        show_spinner( best_percentage );
+    return 
+        display_menu.has_changed() || 
+        show_nodes.has_changed() || 
+        (prev_tree_depth != tree_depth.value) ||
+        (prev_best_count != best_count.value) ||
+        (prev_best_percentage != best_percentage.value);
+}
 
 bool Algo::has_texture() const 
 { return tree_texture.operator bool(); }
@@ -37,16 +51,28 @@ void Algo::draw_texture(
         tree_texture->draw( board_width, board_height, shift_x, shift_y, zoom );
 }
 
-void Algo::reset_texture( DisplayNode display_node, Layout layout )
+void Algo::reset_texture()
 {
+    std::cout << "reset texture" << std::endl;
     if (!graphviz_tree)
         throw runtime_error( "graphviz_tree is not initialized");
+    unique_ptr< ChooseNodes > choose_nodes;
+    if (show_nodes.selected == AllIdx)
+        choose_nodes.reset( new ChooseAllNodes());
+    else if (show_nodes.selected == BestCountIdx)
+        choose_nodes.reset( get_choose_best_count_nodes());
+    else if (show_nodes.selected == BestPercentageIdx)
+        choose_nodes.reset( get_choose_best_percentage_nodes());
+    else
+        throw runtime_error( "invalid show nodes menu selection");
     tree_texture.reset( 
-        new RaylibTexture( graphviz_tree->render_sub_graph( display_node, layout, tree_depth )));
+        new RaylibTexture( graphviz_tree->render_sub_graph(
+              display_modes[display_menu.selected], Circular, tree_depth.value, *choose_nodes )));
 }
+
 void Algo::refocus_tree( 
     float board_width, float board_height, float shift_x, float shift_y, 
-    float zoom, double x, double y, DisplayNode display_node, Layout layout )
+    float zoom, double x, double y )
 {
     auto coord = tree_texture->calc_coord( board_width, board_width, shift_x, shift_y, zoom,x, y);
 
@@ -54,7 +80,7 @@ void Algo::refocus_tree(
     if (gv_node)
     {
         graphviz_tree->set_focus_node( gv_node );
-        reset_texture( display_node, layout );
+        reset_texture();
     }
 }
 
@@ -110,8 +136,7 @@ MetaTicTacToeNegamax::MetaTicTacToeNegamax( ::Player player )
 void MetaTicTacToeNegamax::show_side_panel(DropDownMenu& dropdown_menu)
 {
     Negamax::show_side_panel( dropdown_menu);
-    MetaTicTacToeEval::show_side_panel( dropdown_menu );
-    
+    MetaTicTacToeEval::show_side_panel( dropdown_menu );    
 }
 
 function< double (GenericRule< meta_tic_tac_toe::Move >&, ::Player) > 
@@ -194,6 +219,18 @@ function< meta_tic_tac_toe::Move const& (VertexList< meta_tic_tac_toe::Move > co
 TicTacToeMontecarlo::TicTacToeMontecarlo( ::Player player ) 
     : Montecarlo< tic_tac_toe::Move >( player, Menu { "choose", {"best"}}) {}
 
+void TicTacToeMontecarlo::build_tree( GVC_t* gv_gvc )
+{
+    std::cout << "build tree" << std::endl;
+    auto m_algo = dynamic_cast< montecarlo::Algorithm< tic_tac_toe::Move >* >( algorithm.get());
+    if (!m_algo)
+        throw std::runtime_error( "invalid algo (build_tree)");
+
+    graphviz_tree.reset( new montecarlo::TicTacToeTree(
+        gv_gvc, player, m_algo->get_mcts().exploration, m_algo->get_root()));
+    reset_texture();
+}
+
 montecarlo::ChooseMove< tic_tac_toe::Move >* TicTacToeMontecarlo::get_choose_move_function()
 {
     if (choose_menu.selected == 0)
@@ -204,6 +241,17 @@ montecarlo::ChooseMove< tic_tac_toe::Move >* TicTacToeMontecarlo::get_choose_mov
 
 MetaTicTacToeMontecarlo::MetaTicTacToeMontecarlo( ::Player player ) 
     : Montecarlo< meta_tic_tac_toe::Move >( player, Menu { "choose", {"best"}}) {}
+
+void MetaTicTacToeMontecarlo::build_tree( GVC_t* gv_gvc )
+{
+    auto m_algo = dynamic_cast< montecarlo::Algorithm< meta_tic_tac_toe::Move >* >( algorithm.get());
+    if (!m_algo)
+        throw std::runtime_error( "invalid algo (build_tree)");
+
+    graphviz_tree.reset( new montecarlo::MetaTicTacToeTree(
+        gv_gvc, player, m_algo->get_mcts().exploration, m_algo->get_root()));
+    reset_texture();
+}
 
 montecarlo::ChooseMove< meta_tic_tac_toe::Move >* 
     MetaTicTacToeMontecarlo::get_choose_move_function()
