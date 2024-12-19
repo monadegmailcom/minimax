@@ -6,7 +6,7 @@ CC=g++
 HOMEBREW=/opt/homebrew/Cellar
 
 BOOST_PATH=$(HOMEBREW)/boost/1.85.0
-GRAPHVIZ_PATH=$(HOMEBREW)/graphviz/12.2.0
+GRAPHVIZ_PATH=$(HOMEBREW)/graphviz/12.2.1
 
 PROJECT_ROOT=$(shell pwd)
 
@@ -37,7 +37,7 @@ TIC_TAC_TOE_DEP=tic_tac_toe.h $(RULE_DEP)
 META_TIC_TAC_TOE_DEP=meta_tic_tac_toe.h $(TIC_TAC_TOE_DEP)
 HELPER_DEP=gui/helper.h
 TEXTURE_DEP=gui/texture.h $(TREE_DEP)
-ALGO_DEP=gui/algo.h $(GAME_DEP) 
+GUI_ALGO_DEP=gui/algo.h $(GAME_DEP) 
 GUI_PLAYER_DEP=gui/player.h $(HELPER_DEP)
 GUI_GAME_DEP=gui/game.h $(GUI_PLAYER_DEP)
 RAYLIB_DEP=gui/raylib_interface.h $(HELPER_DEP) $(TEXTURE_DEP) $(META_TIC_TAC_TOE_DEP) $(GAME_DEP)
@@ -51,9 +51,9 @@ $(ODIR)/player.o: player.cpp player.h
 	$(CC) $(FLAGS) -o $@ $<
 $(ODIR)/main.o: main.cpp $(META_TIC_TAC_TOE_DEP) $(MONTECARLO_DEP) $(GAME_DEP) $(RAYLIB_DEP)
 	$(CC) $(FLAGS) -o $@ $<
-$(ODIR)/gui/algo.o: gui/algo.cpp $(ALGO_DEP)
+$(ODIR)/gui/algo.o: gui/algo.cpp $(GUI_ALGO_DEP)
 	$(CC) $(FLAGS) -o $@ $<
-$(ODIR)/gui/player.o: gui/player.cpp $(GUI_PLAYER_DEP)
+$(ODIR)/gui/player.o: gui/player.cpp $(GUI_PLAYER_DEP) $(GUI_ALGO_DEP)
 	$(CC) $(FLAGS) -o $@ $<
 $(ODIR)/gui/helper.o: gui/helper.cpp $(HELPER_DEP)
 	$(CC) $(FLAGS) -o $@ $<
@@ -70,4 +70,5 @@ $(ODIR)/meta_tic_tac_toe.o: meta_tic_tac_toe.cpp $(META_TIC_TAC_TOE_DEP)
 $(ODIR)/tree.o: tree.cpp $(TREE_DEP)
 	$(CC) $(FLAGS) -o $@ $<
 clean:
-	rm -f $(ODIR)/*.o
+	rm -f $(ODIR)/*.o $(ODIR)/gui/*.o
+	rm -f $(ODIR)/minimax
