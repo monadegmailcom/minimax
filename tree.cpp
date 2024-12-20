@@ -12,6 +12,83 @@ void ChooseAllNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t*
         agsubnode(sub_graph, aghead( e ), true);
         agsubedge(sub_graph, e, true);
     }
+}   
+
+ChooseBestNodes::ChooseBestNodes( function< float( Agnode_t* ) > get_weight )
+: get_weight( get_weight ) {}
+
+ChooseBestNodes::~ChooseBestNodes() {}
+
+void ChooseBestNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t* node )
+{
+    // copy all outgoing edges
+    edges.clear();
+    float sum = 0;
+    for (auto e = agfstout(graph, node); e; e = agnxtout(graph, e)) 
+    {
+        const float weight = get_weight( aghead( e ));
+        sum += weight;
+        edges.push_back( std::make_pair( e, weight ));
+    }
+
+    // normalize weight to sum 1
+    if (sum != 0.0)
+        for (auto& e : edges)
+            e.second /= sum;
+
+    // sort edge heads descending by weights
+    sort( edges.begin(), edges.end(), 
+        []( auto& lhs, auto& rhs ) {return lhs.second > rhs.second; });
+    
+    shrink_edges();
+
+    // add best edges to subgraph
+    for (auto& e : edges)
+    {
+        agsubnode(sub_graph, aghead( e.first ), true);
+        agsubedge(sub_graph, e.first, true);
+        const float size = 1 + 4.0 * e.second;
+        agsafeset( e.first, (char*)"arrowsize", agstrdup( sub_graph, 
+                   to_string( size ).data()), "");
+    }
+}
+
+ChooseBestCountNodes::ChooseBestCountNodes( 
+    function< float( Agnode_t* ) > get_weight, size_t best_count )
+: ChooseBestNodes( get_weight ), best_count( best_count ) {}
+
+ChooseBestCountNodes::~ChooseBestCountNodes() {}
+
+void ChooseBestCountNodes::shrink_edges()
+{
+   // add first best_count edges to subgraph
+    size_t count = best_count;
+    auto itr = edges.begin();
+    while (count && itr != edges.end())
+    {
+        ++itr;
+        --count;
+    }
+    edges.erase( itr, edges.end());
+ }
+
+ChooseBestPercentageNodes::ChooseBestPercentageNodes( 
+    function< float( Agnode_t* ) > get_weight, size_t best_percentage )
+: ChooseBestNodes( get_weight ), best_ratio( (float) best_percentage / 100 ) {}
+
+ChooseBestPercentageNodes::~ChooseBestPercentageNodes() {}
+
+void ChooseBestPercentageNodes::shrink_edges()
+{
+    float ratio = 0;
+    auto itr = edges.begin();
+    while (ratio <= best_ratio && itr != edges.end())
+    {
+        ratio += itr->second;
+        ++itr;
+    }
+
+    edges.erase( itr, edges.end());
 }
 
 GraphvizTree::GraphvizTree( GVC_t* gv_gvc, Player player ) : gv_gvc( gv_gvc ), player( player )
@@ -114,37 +191,11 @@ RenderData GraphvizTree::render_sub_graph(
 namespace montecarlo
 {
 
-ChooseBestCountNodes::ChooseBestCountNodes( Tree& tree, size_t best_count )
-: best_count( best_count ), tree( tree ) {}
-
-void ChooseBestCountNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t* node )
+float get_weight( Tree& tree, Agnode_t* node )
 {
-    // copy all outgoing edges
-    edges.clear();
-    for (auto e = agfstout(graph, node); e; e = agnxtout(graph, e)) 
-        edges.push_back( e );
-
-    // sort edge heads descending by playouts
-    sort( edges.begin(), edges.end(), 
-        [this]( Agedge_t* lhs, Agedge_t* rhs ) 
-        {
-            this->tree.get_stats( aghead( lhs ), this->stats );
-            const size_t lhs_playouts = this->stats.playouts;
-            this->tree.get_stats( aghead( rhs ), this->stats );
-            const size_t rhs_playouts = this->stats.playouts;
-            return lhs_playouts > rhs_playouts;
-        });
-    
-    // add first best_count edges to subgraph
-    size_t count = best_count;
-    for (auto e : edges)
-    {
-        if (!count)
-            break;
-        --count;
-        agsubnode(sub_graph, aghead( e ), true);
-        agsubedge(sub_graph, e, true);
-    }
+    static Tree::Stats stats; // recycle memory
+    tree.get_stats( node, stats );
+    return (float) stats.playouts;
 }
 
 Tree::Tree( GVC_t* gv_gvc, Player player, float exploration ) :

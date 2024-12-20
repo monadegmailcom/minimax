@@ -39,6 +39,40 @@ public:
     void operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t* node );
 };
 
+class ChooseBestNodes : public ChooseNodes
+{
+public:
+    ChooseBestNodes( std::function< float( Agnode_t* ) > get_weight );
+    virtual ~ChooseBestNodes();
+    void operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t* node ) override;
+protected:
+    std::vector< std::pair< Agedge_t*, float > > edges;
+    virtual void shrink_edges() = 0;
+private:
+    std::function< float( Agnode_t* ) > get_weight;
+};
+
+class ChooseBestCountNodes : public ChooseBestNodes
+{
+public:
+    ChooseBestCountNodes( std::function< float( Agnode_t* ) > get_weight, size_t best_count );
+    virtual ~ChooseBestCountNodes();
+private:
+    void shrink_edges() override;
+    const size_t best_count;
+};
+
+class ChooseBestPercentageNodes : public ChooseBestNodes
+{
+public:
+    ChooseBestPercentageNodes( 
+        std::function< float( Agnode_t* ) > get_weight, size_t best_percentage );
+    virtual ~ChooseBestPercentageNodes();
+private:
+    void shrink_edges() override;
+    const float best_ratio;
+};
+
 class GraphvizTree
 {
 public:
@@ -98,18 +132,7 @@ private:
     void set_node_attribute( Agnode_t*, Player );
 };
 
-class ChooseBestCountNodes : public ChooseNodes
-{
-public:
-    ChooseBestCountNodes( Tree&, size_t best_count );
-    void operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t* node );
-private:
-    std::vector< Agedge_t* > edges;
-    const size_t best_count;
-    Tree& tree;
-    Tree::Stats stats;
-};
-
+float get_weight( Tree&, Agnode_t* node );
 
 class TicTacToeTree : public Tree
 {

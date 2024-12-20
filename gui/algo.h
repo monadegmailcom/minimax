@@ -271,12 +271,18 @@ protected:
         auto tree = dynamic_cast< montecarlo::Tree* >( this->graphviz_tree.get());  
         if (!tree)
             throw std::runtime_error( "invalid tree (get_choose_best_count_nodes)");
-        return new montecarlo::ChooseBestCountNodes( 
-            *tree, this->best_count.value );
+        return new ChooseBestCountNodes( 
+            [tree](Agnode_t* node) {return montecarlo::get_weight( *tree, node );}, 
+            this->best_count.value );
     }
     ChooseNodes* get_choose_best_percentage_nodes()
     {
-        return nullptr;
+        auto tree = dynamic_cast< montecarlo::Tree* >( this->graphviz_tree.get());  
+        if (!tree)
+            throw std::runtime_error( "invalid tree (get_choose_best_percentage_nodes)");
+        return new ChooseBestPercentageNodes( 
+            [tree](Agnode_t* node) {return montecarlo::get_weight( *tree, node );}, 
+            this->best_percentage.value );
     }
 
     void show_side_panel(DropDownMenu& dropdown_menu)

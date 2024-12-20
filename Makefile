@@ -45,15 +45,22 @@ SOURCES=player.cpp main.cpp tic_tac_toe.cpp meta_tic_tac_toe.cpp tree.cpp \
 		gui/player.cpp gui/game.cpp
 ODIR=obj
 OBJS=$(patsubst %.cpp,$(ODIR)/%.o,$(SOURCES))
-DEPS := $(SOURCES:.cpp=.d)
+DEPS=$(patsubst %.cpp,$(ODIR)/%.d,$(SOURCES))
+#$(info DEPS=$(DEPS))
 
 minimax: $(OBJS)
 	$(CC) $(UNIVERSAL_FLAGS) -o $(ODIR)/minimax $(OBJS) $(LINK)
 
-$(ODIR)/%.o: %.cpp
+$(ODIR)/%.o: %.cpp | $(ODIR)
 	$(CC) $(FLAGS) -MMD -MP -c $< -o $@
-$(ODIR)/gui/%.o: gui/%.cpp
+$(ODIR)/gui/%.o: gui/%.cpp | $(ODIR)/gui
 	$(CC) $(FLAGS) -MMD -MP -c $< -o $@
+
+$(ODIR):
+	mkdir -p $(ODIR)
+
+$(ODIR)/gui:
+	mkdir -p $(ODIR)/gui
 
 -include $(DEPS)
 
