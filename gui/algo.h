@@ -40,10 +40,10 @@ protected:
     Spinner tree_depth = Spinner( "tree depth", 2, 1, 10 );
     enum DisplayIdx { PNGIdx, MoveIdx, StatsIdx};
     DisplayNode display_modes[3] = { DisplayBoard, DisplayMove, DisplayStats };
-    Menu display_menu = Menu { "display", {"board", "move", "stats"}, MoveIdx };
+    Menu display_menu = Menu { "display", {"board", "move", "stats"}, DisplayStats };
     enum ShowNodesIdx { AllIdx, BestCountIdx, BestPercentageIdx };
-    Menu show_nodes = Menu { "show nodes", {"all", "best count", "best percentage"}, 0 };
-    Spinner best_count = Spinner( "best count", 3, 1, 10 );
+    Menu show_nodes = Menu { "show nodes", {"all", "best count", "best percentage"}, BestCountIdx };
+    Spinner best_count = Spinner( "best count", 5, 1, 10 );
     Spinner best_percentage = Spinner( "best percentage", 50, 1, 100 );
 };
 
@@ -196,9 +196,26 @@ public:
             rule, this->player, this->get_eval_function(), get_recursion_function(), get_choose_move_function());
         this->algorithm.reset( minimax_algorithm );
     }
-    void build_tree( GVC_t* gv_gvc ) {}
-    ChooseNodes* get_choose_best_count_nodes() { return nullptr; }
-    ChooseNodes* get_choose_best_percentage_nodes() { return nullptr; }
+
+    ChooseNodes* get_choose_best_count_nodes()
+    {
+        auto tree = dynamic_cast< minimax::Tree* >( this->graphviz_tree.get());  
+        if (!tree)
+            throw std::runtime_error( "invalid tree (Minimax::get_choose_best_count_nodes)");
+        return new ChooseBestCountNodes( 
+            [tree](Agnode_t* node) {return minimax::get_weight( *tree, node );}, 
+            this->best_count.value );
+    }
+
+    ChooseNodes* get_choose_best_percentage_nodes() 
+    { 
+        auto tree = dynamic_cast< minimax::Tree* >( this->graphviz_tree.get());  
+        if (!tree)
+            throw std::runtime_error( "invalid tree (get_choose_best_percentage_nodes)");
+        return new ChooseBestPercentageNodes( 
+            [tree](Agnode_t* node) {return minimax::get_weight( *tree, node );}, 
+            this->best_percentage.value );
+    }
 protected:
     Spinner max_vertices = Spinner( "max vertices", 280000, 1, 1000000 );
     enum RecursionIdx { MaxDepthIdx, MaxVerticesIdx };
@@ -229,6 +246,7 @@ public:
     TicTacToeMinimax( ::Player player );
 protected:
     std::function< double (GenericRule< tic_tac_toe::Move >&, ::Player) > get_eval_function();
+    void build_tree( GVC_t* gv_gvc );
     void show_side_panel(DropDownMenu& dropdown_menu);
 
     Recursion< tic_tac_toe::Move >* get_recursion_function();
@@ -242,7 +260,7 @@ public:
     MetaTicTacToeMinimax( ::Player );
 protected:
     std::function< double (GenericRule< meta_tic_tac_toe::Move >&, ::Player) > get_eval_function();
-
+    void build_tree( GVC_t* gv_gvc );
     void show_side_panel(DropDownMenu& dropdown_menu);
 
     Recursion< meta_tic_tac_toe::Move >* get_recursion_function();

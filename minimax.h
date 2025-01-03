@@ -230,12 +230,6 @@ struct Minimax
             depth = 1;
             rec( player2_won, player1_won, player, root );
             depth = 0;
-            //debug( this );
-
-            /*debug
-            for (auto& v : root.children)
-                std::cout << int( v.move ) << ": " << v.value << ", ";
-            std::cout << std::endl;*/
         } while (recursion( *this ) == Continue);
 
         return root.value;
@@ -254,8 +248,6 @@ struct MaxDepth : public Recursion< MoveT >
             if (depth <= max_depth)
             {
                 ++depth;
-                // debug
-                //std::cout << "depth = " << depth << std::endl;
 
                 return Continue;
             }
@@ -294,9 +286,6 @@ struct MaxVertices : public Recursion< MoveT >
             }
 
             ++depth;
-
-            // debug
-            //std::cout << "depth = " << depth << std::endl;
 
             return Continue;
         }

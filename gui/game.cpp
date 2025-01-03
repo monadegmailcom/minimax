@@ -229,7 +229,6 @@ void Game::show_side_panel()
                 
                 if (tree_controls_changed)
                 {
-                    std::cout << "tree controls changed" << std::endl;
                     algo.reset_texture();
                     mouse_event = MouseEvent();
                 }

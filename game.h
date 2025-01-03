@@ -248,6 +248,11 @@ public:
         ::AlgorithmGenerics< MoveT >( player, initial_rule ), minimax( initial_rule, eval, *recursion ),
         choose_move( choose_move ), recursion( recursion )
     {}
+
+    Vertex< MoveT > const& get_root()
+    {
+        return minimax.root;
+    }
 private:
     std::future< MoveT > get_future()
     {
@@ -255,9 +260,9 @@ private:
             [this]() 
             { 
                 if (this->next_move)
-                    minimax.rule->apply_move( *this->next_move, this->player );           
+                    minimax.apply_move( *this->next_move, this->player );
                 if (this->opp_move)
-                    minimax.rule->apply_move( *this->opp_move, Player( -this->player ));
+                    minimax.apply_move( *this->opp_move, Player( -this->player ));
 
                 this->value = minimax( this->player );
 

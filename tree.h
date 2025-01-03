@@ -87,6 +87,7 @@ public:
     Agnode_t* get_node_by_coord( double x, double y );
     Agraph_t* get_graph() { return gv_graph; }
     Agraph_t* get_subgraph() { return gv_subgraph; }
+    int get_player() const { return player; }
 protected:
     virtual void set_node_attribute( Agnode_t*, Player ) = 0;
 
@@ -102,6 +103,57 @@ private:
     Player player;
 };
 
+namespace minimax
+{
+
+class Tree : public GraphvizTree
+{
+public:
+    Tree( GVC_t* gv_gvc, Player player );
+    virtual ~Tree() {}
+
+    struct Data
+    {
+        Agrec_t h;
+        size_t depth;
+        void* node;
+    };
+
+    struct Stats
+    {
+        double value;
+        size_t depth;
+        bool is_terminal;
+        std::string move;
+    };
+ 
+    virtual void get_stats( Agnode_t* gv_node, Stats& ) = 0;
+private:
+    void set_node_attribute( Agnode_t*, Player );
+};
+
+class TicTacToeTree : public Tree
+{
+public:
+    TicTacToeTree( GVC_t* gv_gvc, Player player, Vertex< tic_tac_toe::Move > const& node );
+    ~TicTacToeTree();
+private:
+    void get_stats( Agnode_t* gv_node, Stats& move );
+};
+
+class MetaTicTacToeTree : public Tree
+{
+public:
+    MetaTicTacToeTree( GVC_t* gv_gvc, Player player, Vertex< meta_tic_tac_toe::Move > const& node );
+    ~MetaTicTacToeTree();
+private:
+    void get_stats( Agnode_t* gv_node, Stats& move );
+};
+
+float get_weight( Tree&, Agnode_t* node );
+
+} // namespace minimax
+    
 namespace montecarlo
 {
 

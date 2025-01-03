@@ -53,9 +53,8 @@ void Algo::draw_texture(
 
 void Algo::reset_texture()
 {
-    std::cout << "reset texture" << std::endl;
     if (!graphviz_tree)
-        throw runtime_error( "graphviz_tree is not initialized");
+        return;
     unique_ptr< ChooseNodes > choose_nodes;
     if (show_nodes.selected == AllIdx)
         choose_nodes.reset( new ChooseAllNodes());
@@ -150,6 +149,17 @@ function< double (GenericRule< tic_tac_toe::Move >&, ::Player) >
     return TicTacToeEval::get_eval_function();
 }
 
+void TicTacToeMinimax::build_tree( GVC_t* gv_gvc )
+{
+    auto m_algo = dynamic_cast< MinimaxAlgorithm< tic_tac_toe::Move >* >( algorithm.get());
+    if (!m_algo)
+        throw std::runtime_error( "invalid algo (build_tree)");
+
+    graphviz_tree.reset( new minimax::TicTacToeTree(
+        gv_gvc, player, m_algo->get_root()));
+    reset_texture();
+}
+
 void TicTacToeMinimax::show_side_panel(DropDownMenu& dropdown_menu)
 {
     Minimax< tic_tac_toe::Move >::show_side_panel( dropdown_menu);
@@ -187,6 +197,17 @@ function< double (GenericRule< meta_tic_tac_toe::Move >&, ::Player) >
     return MetaTicTacToeEval::get_eval_function();
 }
 
+void MetaTicTacToeMinimax::build_tree( GVC_t* gv_gvc )
+{
+    auto m_algo = dynamic_cast< MinimaxAlgorithm< meta_tic_tac_toe::Move >* >( algorithm.get());
+    if (!m_algo)
+        throw std::runtime_error( "invalid algo (build_tree)");
+
+    graphviz_tree.reset( new minimax::MetaTicTacToeTree(
+        gv_gvc, player, m_algo->get_root()));
+    reset_texture();
+}
+
 void MetaTicTacToeMinimax::show_side_panel(DropDownMenu& dropdown_menu)
 {
     Minimax< meta_tic_tac_toe::Move >::show_side_panel( dropdown_menu);
@@ -221,7 +242,6 @@ TicTacToeMontecarlo::TicTacToeMontecarlo( ::Player player )
 
 void TicTacToeMontecarlo::build_tree( GVC_t* gv_gvc )
 {
-    std::cout << "build tree" << std::endl;
     auto m_algo = dynamic_cast< montecarlo::Algorithm< tic_tac_toe::Move >* >( algorithm.get());
     if (!m_algo)
         throw std::runtime_error( "invalid algo (build_tree)");

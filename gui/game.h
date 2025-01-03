@@ -84,11 +84,14 @@ protected:
                 if (opponent->algo_menu.selected != Player::HumanIdx)
                     on_hold = true;
 
-                if (current_player->algo_menu.selected == Player::MontecarloIdx)
+                const int selected = current_player->algo_menu.selected;
+                if (selected == Player::MontecarloIdx || selected == Player::MinimaxIdx)
                     current_player->get_algo().build_tree( gv_gvc );
             }
             
             last_move = move;
+            if (std::find( valid_moves.begin(), valid_moves.end(), *move) == valid_moves.end())
+                throw std::runtime_error( (std::to_string( int( *move )) + " is not a valid move by " + current_player->name).c_str());
             rule->apply_move( *move, current_player->player );
             valid_moves = rule->generate_moves();
 

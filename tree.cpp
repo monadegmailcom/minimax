@@ -23,18 +23,28 @@ void ChooseBestNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t
 {
     // copy all outgoing edges
     edges.clear();
-    float sum = 0;
+    float maxim = 0;
     for (auto e = agfstout(graph, node); e; e = agnxtout(graph, e)) 
     {
-        const float weight = get_weight( aghead( e ));
-        sum += weight;
+        float weight = get_weight( aghead( e ));
+        if (weight > 1000)
+            weight = 1000;
+        if (weight < -1000)
+            weight = -1000;
+        const float abs = fabs( weight );
+        if (abs > maxim)
+            maxim = abs;
+
         edges.push_back( std::make_pair( e, weight ));
     }
+    if (maxim == 0.0)
+        maxim = 1;
 
-    // normalize weight to sum 1
-    if (sum != 0.0)
+    if (!edges.empty())
         for (auto& e : edges)
-            e.second /= sum;
+            // normalize to [1, 5]
+            //e.second = 1.0 + 4 / (1 + exp( -2 * e.second / maxim));
+            e.second = 2.5 * (1 + e.second / maxim);
 
     // sort edge heads descending by weights
     sort( edges.begin(), edges.end(), 
@@ -47,9 +57,8 @@ void ChooseBestNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t
     {
         agsubnode(sub_graph, aghead( e.first ), true);
         agsubedge(sub_graph, e.first, true);
-        const float size = 1 + 4.0 * e.second;
         agsafeset( e.first, (char*)"arrowsize", agstrdup( sub_graph, 
-                   to_string( size ).data()), "");
+                   to_string( e.second ).data()), "");
     }
 }
 
@@ -188,15 +197,132 @@ RenderData GraphvizTree::render_sub_graph(
         .height = box.UR.y - box.LL.y};
 }
 
-namespace montecarlo
+namespace minimax
 {
 
-float get_weight( Tree& tree, Agnode_t* node )
+float get_weight( Tree& tree, Agnode_t* gv_node )
 {
-    static Tree::Stats stats; // recycle memory
-    tree.get_stats( node, stats );
-    return (float) stats.playouts;
+    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    // the template type char is only a placeholder, it is not used
+    Vertex< char > const& node = *(Vertex< char >*)node_data->node;
+    return (float) node.value * tree.get_player();
 }
+
+template< typename MoveT >
+void get_stats( Agraph_t* gv_graph, Agnode_t* gv_node, Tree::Stats& stats )
+{
+    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    Vertex< MoveT > const& node = *(Vertex< MoveT >*)node_data->node;
+    stats.value = node.value;
+    stats.depth = node_data->depth;
+    stats.is_terminal = node.is_terminal;
+    stats.move = to_string( node.move );
+}
+
+template< typename MoveT >
+Agnode_t* add_node( Agraph_t* gv_graph, Player player, Vertex< MoveT > const& node )
+{
+    Agnode_t* gv_node = agnode(gv_graph, nullptr, true);
+
+    Tree::Data* data = (Tree::Data*) agbindrec( gv_node, "data", sizeof(Tree::Data), false);
+    data->depth = 1;
+    data->node = (void*)&node;
+
+    for (Vertex< MoveT > const& child : node.children)
+    {
+        Agnode_t* gv_child = add_node( gv_graph, Player( -player ), child );
+        agedge( gv_graph, gv_node, gv_child, nullptr, true);
+
+        Tree::Data* child_data = (Tree::Data*)aggetrec(gv_child, "data", 0);
+        if (child_data->depth > data->depth)
+            data->depth = child_data->depth;
+    }
+    if (!node.children.empty())
+        ++data->depth;
+
+    return gv_node;
+}
+
+Tree::Tree( GVC_t* gv_gvc, Player player ) : GraphvizTree( gv_gvc, player ) {}
+
+void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
+{
+    static Stats stats; // recycle memory for move string
+    get_stats( gv_node, stats );
+
+    static ostringstream value; // recycle memory
+    value.str("");
+
+    if (display_node == DisplayMove)
+        value << stats.move;
+    else if (display_node == DisplayBoard)
+    {
+        // todo
+    }
+    else if (display_node == DisplayStats)
+    {
+        const char* const entry_prefix = "<TR><TD ALIGN=\"LEFT\" WIDTH=\"50\">";
+        const char* const entry_postfix = "</TD><TD ALIGN=\"RIGHT\" WIDTH=\"50\">";
+        const char* const line_postfix = "</TD></TR>";
+
+        value 
+            << "<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">"
+            << entry_prefix << "move" << entry_postfix << stats.move << line_postfix
+            << entry_prefix << "value" << entry_postfix 
+            << std::fixed << std::setprecision( 2 ) << stats.value << line_postfix
+            << entry_prefix << "depth" << entry_postfix << stats.depth << line_postfix
+            << entry_prefix << "is_terminal" << entry_postfix << stats.is_terminal << line_postfix
+            << "</TABLE>";
+    }
+    else
+        throw std::runtime_error( "invalid display node");
+
+    if (value.str().empty())
+        agsafeset( gv_node, (char*)"label", (char*)"", "");    
+    else
+        agsafeset( gv_node, (char*)"label", agstrdup_html( gv_subgraph, value.str().data()), "");
+
+    if (player == player1)
+        agsafeset(gv_node, (char*)"shape", (char*)"box", "");
+    else
+        agsafeset(gv_node, (char*)"shape", (char*)"ellipse", "");
+
+    for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
+        set_node_attribute( aghead( e ), Player( -player ));
+}
+
+TicTacToeTree::TicTacToeTree( GVC_t* gv_gvc, Player player, Vertex< tic_tac_toe::Move > const& node )
+    : Tree( gv_gvc, player ) 
+{
+    add_node( gv_graph, player, node );
+    gv_focus_node = agfstnode( gv_graph);
+}
+
+TicTacToeTree::~TicTacToeTree() {}
+
+void TicTacToeTree::get_stats( Agnode_t* gv_node, Tree::Stats& stats )
+{
+    minimax::get_stats< tic_tac_toe::Move >( gv_graph, gv_node, stats );
+}
+
+MetaTicTacToeTree::MetaTicTacToeTree( GVC_t* gv_gvc, Player player, Vertex< meta_tic_tac_toe::Move > const& node )
+    : Tree( gv_gvc, player ) 
+{
+    add_node( gv_graph, player, node );
+    gv_focus_node = agfstnode( gv_graph);
+}
+
+MetaTicTacToeTree::~MetaTicTacToeTree() {}
+
+void MetaTicTacToeTree::get_stats( Agnode_t* gv_node, Tree::Stats& stats )
+{
+    minimax::get_stats< tic_tac_toe::Move >( gv_graph, gv_node, stats );
+}
+
+} // namespace minimax
+
+namespace montecarlo
+{
 
 Tree::Tree( GVC_t* gv_gvc, Player player, float exploration ) :
     GraphvizTree( gv_gvc, player ), exploration( exploration )
@@ -288,6 +414,19 @@ montecarlo::Node< MoveT >* get_parent_node( Agraph_t* gv_graph, Agnode_t* gv_nod
         }    
     }
     return nullptr;
+}
+
+float get_weight( Tree& tree, Agnode_t* gv_node )
+{
+    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    // the template type char is only a placeholder, it is not used
+    montecarlo::Node< char > const& node = *(montecarlo::Node< char >*)node_data->node;
+    montecarlo::Node< char >* parent_node = 
+        montecarlo::get_parent_node< char >( tree.get_graph(), gv_node );
+    float value = (float) node.denominator;
+    if (parent_node)
+        value /= parent_node->denominator;
+    return value;
 }
 
 template< typename MoveT >

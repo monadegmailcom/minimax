@@ -35,8 +35,8 @@ DEBUG=-g
 RELEASE=-O3 -DNDEBUG
 
 # don't forget to clean if you change OPT
-OPT=$(DEBUG)
-#OPT=$(RELEASE)
+#OPT=$(DEBUG)
+OPT=$(RELEASE)
 
 FLAGS=-std=c++17 -Wall $(OPT) $(UNIVERSAL_FLAGS) $(INCLUDE) -c
 
