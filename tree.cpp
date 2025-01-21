@@ -11,8 +11,11 @@ void ChooseAllNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t*
     {   
         agsubnode(sub_graph, aghead( e ), true);
         agsubedge(sub_graph, e, true);
+        agsafeset( e, (char*)"arrowsize", "1.0", "");
     }
 }   
+
+const float big = 10000;
 
 ChooseBestNodes::ChooseBestNodes( function< float( Agnode_t* ) > get_weight )
 : get_weight( get_weight ) {}
@@ -23,33 +26,30 @@ void ChooseBestNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t
 {
     // copy all outgoing edges
     edges.clear();
-    float maxim = 0;
+    
+    maxim = -big;
+    minim = big;
     for (auto e = agfstout(graph, node); e; e = agnxtout(graph, e)) 
     {
         float weight = get_weight( aghead( e ));
-        if (weight > 1000)
-            weight = 1000;
-        if (weight < -1000)
-            weight = -1000;
-        const float abs = fabs( weight );
-        if (abs > maxim)
-            maxim = abs;
-
+        if (weight > big)
+            weight = big;
+        if (weight < -big)
+            weight = -big;
+        if (weight > maxim)
+            maxim = weight;
+        if (weight < minim)
+            minim = weight;
         edges.push_back( std::make_pair( e, weight ));
     }
-    if (maxim == 0.0)
-        maxim = 1;
-
-    if (!edges.empty())
-        for (auto& e : edges)
-            // normalize to [1, 5]
-            //e.second = 1.0 + 4 / (1 + exp( -2 * e.second / maxim));
-            e.second = 2.5 * (1 + e.second / maxim);
-
     // sort edge heads descending by weights
     sort( edges.begin(), edges.end(), 
         []( auto& lhs, auto& rhs ) {return lhs.second > rhs.second; });
-    
+
+    dist = maxim - minim;
+    if (dist == 0.0)
+        dist = 1;
+
     shrink_edges();
 
     // add best edges to subgraph
@@ -57,8 +57,11 @@ void ChooseBestNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t
     {
         agsubnode(sub_graph, aghead( e.first ), true);
         agsubedge(sub_graph, e.first, true);
+        // normalize weight to [1, 4] 
+        float weight = 1 + (e.second - minim) / dist;
+        weight *= weight;
         agsafeset( e.first, (char*)"arrowsize", agstrdup( sub_graph, 
-                   to_string( e.second ).data()), "");
+                   to_string( weight ).data()), "");
     }
 }
 
@@ -89,11 +92,16 @@ ChooseBestPercentageNodes::~ChooseBestPercentageNodes() {}
 
 void ChooseBestPercentageNodes::shrink_edges()
 {
-    float ratio = 0;
+    double sum = 0;
+    for (auto& e : edges)
+        sum += (e.second - minim) / dist;
+
+    const float limit = best_ratio * sum;
     auto itr = edges.begin();
-    while (ratio <= best_ratio && itr != edges.end())
+    sum = 0;
+    while (sum <= limit && itr != edges.end())
     {
-        ratio += itr->second;
+        sum += (itr->second - minim) / dist;
         ++itr;
     }
 
@@ -119,16 +127,32 @@ GraphvizTree::~GraphvizTree()
 
 Agnode_t* GraphvizTree::get_node_by_coord( double x, double y )
 {
+    cout << "click (" << x << ", " << y << ")" << endl;
+
+    // debug
+    auto tree = dynamic_cast< montecarlo::Tree* >( this );
+    montecarlo::Tree::Stats stats;
+    auto tree2 = dynamic_cast< minimax::Tree* >( this );
+    minimax::Tree::Stats stats2;
     for (auto n = agfstnode(gv_subgraph); n; n = agnxtnode( gv_subgraph, n ))
     {
+        if (tree)
+            tree->get_stats( n, stats );
+        if (tree2)
+            tree2->get_stats( n, stats2 );
         auto coord = ND_coord(n);
         double left = coord.x - ND_xsize( n ) / 2;
         double right = coord.x + ND_xsize( n ) / 2;
-        double top = coord.y - ND_ysize( n ) / 2;
-        double bottom = coord.y + ND_ysize( n ) / 2;
+        double top = coord.y + ND_ysize( n ) / 2;
+        double bottom = coord.y - ND_ysize( n ) / 2;
+        if (tree)
+            cout << stats.move << " (" << coord.x << ", " << coord.y << ") (" << left << ", " << right << ") (" << bottom << ", " << top << ")" << endl;
+        if (tree2)
+            cout << stats2.move << " (" << coord.x << ", " << coord.y << ") (" << left << ", " << right << ") (" << bottom << ", " << top << ")" << endl;
 
-        if (left <= x && x <= right && top <= y && y <= bottom)
-            return n; 
+        if (left <= x && x <= right && bottom <= y && y <= top)
+         {   cout << "chosen" << endl;
+            return n; }
     }
     return nullptr;
 }
@@ -169,7 +193,7 @@ RenderData GraphvizTree::render_sub_graph(
     display_node = _display_node;
     agsafeset( gv_focus_node, (char*)"color", (char*)"red", "");
 
-    set_node_attribute( agfstnode(gv_subgraph), player );
+    set_node_attribute( agfstnode(gv_subgraph) );
 
     char const* engine;
     if (layout == Hierarchie)
@@ -202,7 +226,7 @@ namespace minimax
 
 float get_weight( Tree& tree, Agnode_t* gv_node )
 {
-    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
     // the template type char is only a placeholder, it is not used
     Vertex< char > const& node = *(Vertex< char >*)node_data->node;
     return (float) node.value * tree.get_player();
@@ -211,7 +235,7 @@ float get_weight( Tree& tree, Agnode_t* gv_node )
 template< typename MoveT >
 void get_stats( Agraph_t* gv_graph, Agnode_t* gv_node, Tree::Stats& stats )
 {
-    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
     Vertex< MoveT > const& node = *(Vertex< MoveT >*)node_data->node;
     stats.value = node.value;
     stats.depth = node_data->depth;
@@ -224,8 +248,9 @@ Agnode_t* add_node( Agraph_t* gv_graph, Player player, Vertex< MoveT > const& no
 {
     Agnode_t* gv_node = agnode(gv_graph, nullptr, true);
 
-    Tree::Data* data = (Tree::Data*) agbindrec( gv_node, "data", sizeof(Tree::Data), false);
+    Data* data = (Data*) agbindrec( gv_node, "data", sizeof(Data), false);
     data->depth = 1;
+    data->player = player;
     data->node = (void*)&node;
 
     for (Vertex< MoveT > const& child : node.children)
@@ -233,7 +258,7 @@ Agnode_t* add_node( Agraph_t* gv_graph, Player player, Vertex< MoveT > const& no
         Agnode_t* gv_child = add_node( gv_graph, Player( -player ), child );
         agedge( gv_graph, gv_node, gv_child, nullptr, true);
 
-        Tree::Data* child_data = (Tree::Data*)aggetrec(gv_child, "data", 0);
+        Data* child_data = (Data*)aggetrec(gv_child, "data", 0);
         if (child_data->depth > data->depth)
             data->depth = child_data->depth;
     }
@@ -245,7 +270,7 @@ Agnode_t* add_node( Agraph_t* gv_graph, Player player, Vertex< MoveT > const& no
 
 Tree::Tree( GVC_t* gv_gvc, Player player ) : GraphvizTree( gv_gvc, player ) {}
 
-void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
+void Tree::set_node_attribute( Agnode_t* gv_node )
 {
     static Stats stats; // recycle memory for move string
     get_stats( gv_node, stats );
@@ -282,13 +307,14 @@ void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
     else
         agsafeset( gv_node, (char*)"label", agstrdup_html( gv_subgraph, value.str().data()), "");
 
-    if (player == player1)
+    Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
+    if (node_data->player == player1)
         agsafeset(gv_node, (char*)"shape", (char*)"box", "");
     else
         agsafeset(gv_node, (char*)"shape", (char*)"ellipse", "");
 
     for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
-        set_node_attribute( aghead( e ), Player( -player ));
+        set_node_attribute( aghead( e ));
 }
 
 TicTacToeTree::TicTacToeTree( GVC_t* gv_gvc, Player player, Vertex< tic_tac_toe::Move > const& node )
@@ -328,7 +354,7 @@ Tree::Tree( GVC_t* gv_gvc, Player player, float exploration ) :
     GraphvizTree( gv_gvc, player ), exploration( exploration )
 {}
 
-void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
+void Tree::set_node_attribute( Agnode_t* gv_node )
 {
     static Stats stats; // recycle memory for move string
     get_stats( gv_node, stats );
@@ -338,10 +364,6 @@ void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
 
     if (display_node == DisplayMove)
         value << stats.move;
-    else if (display_node == DisplayBoard)
-    {
-        // todo
-    }
     else if (display_node == DisplayStats)
     {
         const char* const entry_prefix = "<TR><TD ALIGN=\"LEFT\" WIDTH=\"50\">";
@@ -366,13 +388,14 @@ void Tree::set_node_attribute( Agnode_t* gv_node, Player player )
     else
         agsafeset( gv_node, (char*)"label", agstrdup_html( gv_subgraph, value.str().data()), "");
 
-    if (player == player1)
+    Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
+    if (node_data->player == player1)
         agsafeset(gv_node, (char*)"shape", (char*)"box", "");
     else
         agsafeset(gv_node, (char*)"shape", (char*)"ellipse", "");
 
     for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
-        set_node_attribute( aghead( e ), Player( -player ));
+        set_node_attribute( aghead( e ));
 }
 
 template< typename MoveT >
@@ -380,8 +403,9 @@ Agnode_t* add_node( Agraph_t* gv_graph, Player player, montecarlo::Node< MoveT >
 {
     Agnode_t* gv_node = agnode(gv_graph, nullptr, true);
 
-    Tree::Data* data = (Tree::Data*) agbindrec( gv_node, "data", sizeof(Tree::Data), false);
+    Data* data = (Data*) agbindrec( gv_node, "data", sizeof(Data), false);
     data->depth = 1;
+    data->player = player;
     data->node = (void*)&node;
 
     for (montecarlo::Node< MoveT > const& child : node.children)
@@ -389,7 +413,7 @@ Agnode_t* add_node( Agraph_t* gv_graph, Player player, montecarlo::Node< MoveT >
         Agnode_t* gv_child = add_node( gv_graph, Player( -player ), child );
         agedge( gv_graph, gv_node, gv_child, nullptr, true);
 
-        Tree::Data* child_data = (Tree::Data*)aggetrec(gv_child, "data", 0);
+        Data* child_data = (Data*)aggetrec(gv_child, "data", 0);
         if (child_data->depth > data->depth)
             data->depth = child_data->depth;
     }
@@ -408,7 +432,7 @@ montecarlo::Node< MoveT >* get_parent_node( Agraph_t* gv_graph, Agnode_t* gv_nod
         Agnode_t* gv_parent = agtail( gv_edge );
         if (gv_parent)
         {
-            Tree::Data* parent_data = (Tree::Data*)aggetrec(gv_parent, "data", 0);
+            Data* parent_data = (Data*)aggetrec(gv_parent, "data", 0);
             if (parent_data)
                 return (montecarlo::Node< MoveT >*)parent_data->node;
         }    
@@ -418,7 +442,7 @@ montecarlo::Node< MoveT >* get_parent_node( Agraph_t* gv_graph, Agnode_t* gv_nod
 
 float get_weight( Tree& tree, Agnode_t* gv_node )
 {
-    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
     // the template type char is only a placeholder, it is not used
     montecarlo::Node< char > const& node = *(montecarlo::Node< char >*)node_data->node;
     montecarlo::Node< char >* parent_node = 
@@ -432,7 +456,7 @@ float get_weight( Tree& tree, Agnode_t* gv_node )
 template< typename MoveT >
 void get_stats( Agraph_t* gv_graph, Agnode_t* gv_node, double exploration, Tree::Stats& stats )
 {
-    Tree::Data* node_data = (Tree::Data*)aggetrec(gv_node, "data", 0);
+    Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
     montecarlo::Node< MoveT > const& node = *(montecarlo::Node< MoveT >*)node_data->node;
     stats.points = node.numerator;
     stats.playouts = node.denominator;

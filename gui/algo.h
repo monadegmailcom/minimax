@@ -33,7 +33,7 @@ public:
 protected:
     void reset();
 
-    std::unique_ptr< RaylibTexture > tree_texture;
+    std::unique_ptr< RaylibTexture > tree_texture;    
     std::unique_ptr< GraphvizTree > graphviz_tree;
 
     ::Player player;
@@ -311,7 +311,7 @@ protected:
     }
     montecarlo::Algorithm< MoveT >* montecarlo_algorithm = nullptr;
     Menu choose_menu;
-    Spinner simulations = Spinner( "simulations", 100 /*80000*/, 1, 1000000 );
+    Spinner simulations = Spinner( "simulations", 80000, 1, 1000000 );
     ValueBoxFloat exploration_factor = ValueBoxFloat( "exploration factor", "0.40" );
 };
 

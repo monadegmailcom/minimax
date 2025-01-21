@@ -103,11 +103,10 @@ struct DisableGui
 struct MouseEvent
 {
     Vector2 position = { 0.0f, 0.0f };
-    Vector2 last_mouse_position = { 0.0f, 0.0f };
+    Vector2 last_drag_position = { 0.0f, 0.0f };
     float scale = 1.0f;
     float last_click_time = 0.0f;
     bool dragging = false;
-    bool double_click = false;
 };
 
 } // namespace gui {

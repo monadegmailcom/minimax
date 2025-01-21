@@ -91,62 +91,60 @@ Game::~Game() {}
 
 void Game::show_graph( MouseEvent& mouse_event)
 {
+    const Vector2 current_mouse_pos = GetMousePosition();
+    const bool mouse_pos_over_board = CheckCollisionPointRec(
+        current_mouse_pos, 
+        {0, 0, board_width, board_width});
+
     Player& player = *opponent;
     if (player.get_algo().has_texture())
     {
-        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) 
+        if (mouse_pos_over_board && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) 
         {
-            mouse_event.last_mouse_position = GetMousePosition();
-            double click_time = GetTime();
+            mouse_event.dragging = true;
+            mouse_event.last_drag_position = current_mouse_pos;
+
+            // double click?
+            const double click_time = GetTime();
             const float time_threshold = 0.3f;
             if (click_time - mouse_event.last_click_time < time_threshold)
-                mouse_event.double_click = true;
-            else
-                mouse_event.double_click = false;
-
-            mouse_event.last_click_time = click_time;
-
-            if (CheckCollisionPointRec( 
-                    mouse_event.last_mouse_position, 
-                    {0, 0, board_width, board_width}))
-                mouse_event.dragging = true;
-        }
-        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON) && mouse_event.dragging)
-        {
-            Vector2 current_mouse_pos = GetMousePosition();
-            const float distance_threshold = 5.0f;
-            // clicked and not dragged?
-            if (std::abs(current_mouse_pos.x - mouse_event.last_mouse_position.x) < distance_threshold &&
-                std::abs(current_mouse_pos.y - mouse_event.last_mouse_position.y) < distance_threshold &&
-                mouse_event.double_click)
             {
                 player.get_algo().refocus_tree( 
                     board_width, board_width, 
                     mouse_event.position.x, mouse_event.position.y, mouse_event.scale,
                     current_mouse_pos.x, current_mouse_pos.y );
+                // reset mouse event
                 mouse_event = MouseEvent();
             }
-
-            mouse_event.dragging = false;
+            else
+                mouse_event.last_click_time = click_time;
         }
         
-        if (mouse_event.dragging) 
+        if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON))
+            mouse_event.dragging = false;
+
+        const float distance_threshold = 5.0f;
+        if (mouse_pos_over_board && mouse_event.dragging && 
+            (std::abs(current_mouse_pos.x - mouse_event.last_drag_position.x) > distance_threshold ||
+             std::abs(current_mouse_pos.y - mouse_event.last_drag_position.y) > distance_threshold))
         {
-            const Vector2 current_mouse_position = GetMousePosition();
-            const Vector2 delta = {current_mouse_position.x - mouse_event.last_mouse_position.x,
-                            current_mouse_position.y - mouse_event.last_mouse_position.y };
+            const Vector2 delta = 
+                {current_mouse_pos.x - mouse_event.last_drag_position.x,
+                 current_mouse_pos.y - mouse_event.last_drag_position.y };
             mouse_event.position.x += delta.x;
             mouse_event.position.y += delta.y;
-            mouse_event.last_mouse_position = current_mouse_position;
+            mouse_event.last_drag_position = current_mouse_pos;
         }
 
         const float wheel = GetMouseWheelMove();
         if (wheel != 0) 
         {
             mouse_event.scale += wheel * 0.1f;
-            // Prevent zooming out too much
-            if (mouse_event.scale < 0.1f) 
-                mouse_event.scale = 0.1f; 
+            // Prevent zooming out or in too much
+            if (mouse_event.scale < 0.1) 
+                mouse_event.scale = 0.1; 
+            else if (mouse_event.scale > 10)
+                mouse_event.scale = 10;
         }
 
         player.get_algo().draw_texture( 

@@ -48,6 +48,9 @@ public:
 protected:
     std::vector< std::pair< Agedge_t*, float > > edges;
     virtual void shrink_edges() = 0;
+    float maxim;
+    float minim;
+    float dist;
 private:
     std::function< float( Agnode_t* ) > get_weight;
 };
@@ -89,7 +92,7 @@ public:
     Agraph_t* get_subgraph() { return gv_subgraph; }
     int get_player() const { return player; }
 protected:
-    virtual void set_node_attribute( Agnode_t*, Player ) = 0;
+    virtual void set_node_attribute( Agnode_t* ) = 0;
 
     std::ostringstream value; // reuse allocated memory
     DisplayNode display_node = DisplayMove;
@@ -103,6 +106,15 @@ private:
     Player player;
 };
 
+struct Data
+{
+    Agrec_t h;
+    size_t depth;
+    Player player;
+    void* node;
+};
+
+
 namespace minimax
 {
 
@@ -111,13 +123,6 @@ class Tree : public GraphvizTree
 public:
     Tree( GVC_t* gv_gvc, Player player );
     virtual ~Tree() {}
-
-    struct Data
-    {
-        Agrec_t h;
-        size_t depth;
-        void* node;
-    };
 
     struct Stats
     {
@@ -129,7 +134,7 @@ public:
  
     virtual void get_stats( Agnode_t* gv_node, Stats& ) = 0;
 private:
-    void set_node_attribute( Agnode_t*, Player );
+    void set_node_attribute( Agnode_t* );
 };
 
 class TicTacToeTree : public Tree
@@ -162,13 +167,6 @@ class Tree : public GraphvizTree
 public:
     Tree( GVC_t* gv_gvc, Player player, float exploration );
 
-    struct Data
-    {
-        Agrec_t h;
-        size_t depth;
-        void* node;
-    };
-
     struct Stats
     {
         double points;
@@ -181,7 +179,7 @@ public:
 protected:
     float exploration;
 private:
-    void set_node_attribute( Agnode_t*, Player );
+    void set_node_attribute( Agnode_t* );
 };
 
 float get_weight( Tree&, Agnode_t* node );
