@@ -1,6 +1,7 @@
 #pragma once
 
 #include "raygui.h"
+#include "../meta_tic_tac_toe.h"
 
 #include <vector>
 #include <string>
@@ -108,5 +109,18 @@ struct MouseEvent
     float last_click_time = 0.0f;
     bool dragging = false;
 };
+
+void draw_box( 
+    int i, int j, Color color, float cell_size, float pos_x = 0, float pos_y = 0, float line_width = 1);
+
+void draw_player(
+    ::Player player, int i, int j, Color color, float cell_size, float pos_x = 0, float pos_y = 0);
+
+void draw_tic_tac_toe_board( 
+    ::Player const* board, std::optional< tic_tac_toe::Move > const& last_move, float board_width, float pos_x = 0, float pos_y = 0 );
+
+void draw_meta_tic_tac_toe_board( 
+    ::Player const* board, ::Player* meta_board, std::array< bool, meta_tic_tac_toe::item_size >& terminals,
+    std::optional< tic_tac_toe::Move > const& last_move, float board_width, float pos_x = 0, float pos_y = 0 );
 
 } // namespace gui {

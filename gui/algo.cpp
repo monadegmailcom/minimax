@@ -1,5 +1,6 @@
 #include "algo.h"
 #include "texture.h"
+#include "helper.h"
 
 #include <stdexcept>
 
@@ -67,20 +68,25 @@ void Algo::reset_texture()
     tree_texture.reset( 
         new RaylibTexture( graphviz_tree->render_sub_graph(
               display_modes[display_menu.selected], Circular, tree_depth.value, *choose_nodes )));
+    if (display_modes[display_menu.selected] == DisplayBoard)
+        display_board();
 }
 
-void Algo::refocus_tree( 
+bool Algo::refocus_tree( 
     float board_width, float board_height, float shift_x, float shift_y, 
     float zoom, double x, double y )
 {
-    auto coord = tree_texture->calc_coord( board_width, board_width, shift_x, shift_y, zoom,x, y);
+    auto coord = tree_texture->calc_coord( board_width, board_height, shift_x, shift_y, zoom,x, y);
 
     Agnode_t* gv_node = graphviz_tree->get_node_by_coord( coord.first, coord.second );
     if (gv_node)
     {
         graphviz_tree->set_focus_node( gv_node );
         reset_texture();
+        return true;
     }
+    else
+        return false;
 }
 
 function< double (GenericRule< tic_tac_toe::Move >&, ::Player) > TicTacToeEval::get_eval_function()
@@ -188,6 +194,14 @@ function< tic_tac_toe::Move const& (VertexList< tic_tac_toe::Move > const&) > Ti
         throw runtime_error( "invalid ttt choose move menu selection");
 }
 
+void TicTacToeMinimax::draw_board( 
+    GenericRule< tic_tac_toe::Move >& rule, optional< tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y )
+{
+    auto ttt_rule = dynamic_cast< tic_tac_toe::DeepRule* >( &rule );
+    draw_tic_tac_toe_board( ttt_rule->board, last_move, board_width, pos_x, pos_y );
+}
+
 MetaTicTacToeMinimax::MetaTicTacToeMinimax( ::Player player ) 
     : Minimax< meta_tic_tac_toe::Move >( player) {}
 
@@ -237,6 +251,15 @@ function< meta_tic_tac_toe::Move const& (VertexList< meta_tic_tac_toe::Move > co
         throw runtime_error( "invalid uttt choose move menu selection");
 }
 
+void MetaTicTacToeMinimax::draw_board( 
+    GenericRule< meta_tic_tac_toe::Move >& rule, optional< meta_tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y )
+{
+    auto uttt_rule = dynamic_cast< meta_tic_tac_toe::Rule* >( &rule );
+    draw_meta_tic_tac_toe_board( uttt_rule->board.data(), uttt_rule->meta_board, uttt_rule->terminals, 
+        last_move, board_width, pos_x, pos_y );
+}
+
 TicTacToeMontecarlo::TicTacToeMontecarlo( ::Player player ) 
     : Montecarlo< tic_tac_toe::Move >( player, Menu { "choose", {"best"}}) {}
 
@@ -257,6 +280,14 @@ montecarlo::ChooseMove< tic_tac_toe::Move >* TicTacToeMontecarlo::get_choose_mov
         return new montecarlo::ChooseBest< tic_tac_toe::Move >();
     else
         throw runtime_error( "invalid ttt montecarlo choose move menu selection");
+}
+
+void TicTacToeMontecarlo::draw_board( 
+    GenericRule< tic_tac_toe::Move >& rule, optional< tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y )
+{
+    auto ttt_rule = dynamic_cast< tic_tac_toe::DeepRule* >( &rule );
+    draw_tic_tac_toe_board( ttt_rule->board, last_move, board_width, pos_x, pos_y );
 }
 
 MetaTicTacToeMontecarlo::MetaTicTacToeMontecarlo( ::Player player ) 
@@ -280,6 +311,15 @@ montecarlo::ChooseMove< meta_tic_tac_toe::Move >*
         return new montecarlo::ChooseBest< meta_tic_tac_toe::Move >();
     else
         throw runtime_error( "invalid uttt montecarlo choose move menu selection");
+}
+
+void MetaTicTacToeMontecarlo::draw_board( 
+    GenericRule< meta_tic_tac_toe::Move >& rule, optional< meta_tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y )
+{
+    auto uttt_rule = dynamic_cast< meta_tic_tac_toe::Rule* >( &rule );
+    draw_meta_tic_tac_toe_board( uttt_rule->board.data(), uttt_rule->meta_board, uttt_rule->terminals, 
+        last_move, board_width, pos_x, pos_y );
 }
 
 } // namespace gui {

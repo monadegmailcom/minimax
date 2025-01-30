@@ -76,6 +76,14 @@ private:
     const float best_ratio;
 };
 
+struct Data
+{
+    Agrec_t h;
+    size_t depth;
+    Player player;
+    void* node;
+};
+
 class GraphvizTree
 {
 public:
@@ -87,6 +95,7 @@ public:
         DisplayNode _display_node, Layout layout, size_t depth, ChooseNodes& );
 
     void set_focus_node( Agnode_t* node ) { gv_focus_node = node; }
+    Agnode_t* get_focus_node() { return gv_focus_node; }
     Agnode_t* get_node_by_coord( double x, double y );
     Agraph_t* get_graph() { return gv_graph; }
     Agraph_t* get_subgraph() { return gv_subgraph; }
@@ -105,15 +114,6 @@ private:
     GVC_t* gv_gvc = nullptr;
     Player player;
 };
-
-struct Data
-{
-    Agrec_t h;
-    size_t depth;
-    Player player;
-    void* node;
-};
-
 
 namespace minimax
 {

@@ -46,6 +46,8 @@ void ChooseBestNodes::operator()( Agraph_t* graph, Agraph_t* sub_graph, Agnode_t
     sort( edges.begin(), edges.end(), 
         []( auto& lhs, auto& rhs ) {return lhs.second > rhs.second; });
 
+    if (minim > 0)
+        minim = 0;
     dist = maxim - minim;
     if (dist == 0.0)
         dist = 1;
@@ -94,14 +96,14 @@ void ChooseBestPercentageNodes::shrink_edges()
 {
     double sum = 0;
     for (auto& e : edges)
-        sum += (e.second - minim) / dist;
+        sum += e.second - minim;
 
     const float limit = best_ratio * sum;
     auto itr = edges.begin();
     sum = 0;
     while (sum <= limit && itr != edges.end())
     {
-        sum += (itr->second - minim) / dist;
+        sum += itr->second - minim;
         ++itr;
     }
 
@@ -183,10 +185,7 @@ RenderData GraphvizTree::render_sub_graph(
     agsubnode(gv_subgraph, gv_focus_node, true);
     auto gv_edge = agfstin( gv_graph, gv_focus_node );
     if (gv_edge)
-    {
-        agsubnode(gv_subgraph, agtail( gv_edge ), true);
         agsubedge(gv_subgraph, gv_edge, true);
-    }
     
     add_node_to_subgraph( gv_focus_node, depth, choose_nodes );
 
@@ -364,6 +363,10 @@ void Tree::set_node_attribute( Agnode_t* gv_node )
 
     if (display_node == DisplayMove)
         value << stats.move;
+    else if (display_node == DisplayBoard)
+    {
+        // todo
+    }
     else if (display_node == DisplayStats)
     {
         const char* const entry_prefix = "<TR><TD ALIGN=\"LEFT\" WIDTH=\"50\">";

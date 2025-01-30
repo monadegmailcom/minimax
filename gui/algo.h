@@ -16,6 +16,7 @@ public:
     Algo( ::Player );
     virtual ~Algo();
     virtual void build_tree( GVC_t* gv_gvc ) = 0;
+    virtual void display_board() = 0;
     virtual Algorithm* get_algorithm() = 0;
     virtual void show_side_panel(DropDownMenu& dropdown_menu) = 0;
 
@@ -23,7 +24,8 @@ public:
     void draw_texture( 
         float board_width, float board_height, float shift_x, float shift_y, float zoom );
     void reset_texture();
-    void refocus_tree( 
+    // return true, if a node is double clicked
+    bool refocus_tree( 
         float board_width, float board_height, float shift_x, float shift_y, 
         float zoom, double x, double y );
     // return true if the tree controls are changed
@@ -66,14 +68,70 @@ public:
             Algo::reset();
         }
     }
-    Algorithm* get_algorithm()
+    Algorithm* get_algorithm() override
     {
         return algorithm.get();
     }
 
     virtual void start_game( GenericRule< MoveT >& rule ) = 0;
-
+    virtual MoveT const& get_move( Agnode_t* ) = 0;
     std::unique_ptr< AlgorithmGenerics< MoveT > > algorithm;
+protected:
+    void display_board() override
+    {
+        auto gv_focus_node = graphviz_tree->get_focus_node();
+        std::unique_ptr< GenericRule< MoveT > > focus_rule { 
+            update_rule( gv_focus_node ) };
+        display_board_rec( *focus_rule, gv_focus_node );
+    }
+
+    GenericRule< MoveT >* update_rule( Agnode_t* gv_node )
+    {
+        if (!gv_node)
+            throw std::runtime_error( "invalid node (update_rule)");
+        auto parent = agtail( agfstin( graphviz_tree->get_subgraph(), gv_node ));
+        GenericRule< MoveT >* rule = 0;
+        if (parent)
+        {
+            rule = update_rule( parent );
+            Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
+            rule->apply_move( get_move( gv_node ), node_data->player );
+        }
+        else
+            rule = this->rule->clone();
+
+        return rule;
+    }
+
+    virtual void draw_board( GenericRule< MoveT >&, std::optional< MoveT > last_move, float board_width,
+        float pos_x, float pos_y ) = 0;
+    std::unique_ptr< GenericRule< MoveT > > rule;
+private:
+    void display_board_rec( GenericRule< MoveT >& current_rule, Agnode_t* gv_node )
+    {
+        const auto coord = ND_coord( gv_node );
+        const float size_x = ND_xsize( gv_node );
+        const float size_y = ND_ysize( gv_node );
+
+        float size; // the lesser of width and height
+        if (size_x > size_y)
+            size = size_y;
+        else    
+            size = size_x;
+
+        draw_board( current_rule, {}, size, coord.x - size / 2, coord.y + size / 2 );
+
+        Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
+        auto gv_subgraph = graphviz_tree->get_subgraph();
+        for (auto e = agfstout(gv_subgraph, gv_node); e; e = agnxtout(gv_subgraph, e)) 
+        {
+            auto n = aghead( e );
+            MoveT const& move = get_move( n );
+            current_rule.apply_move( move, node_data->player );
+            display_board_rec( current_rule, n );
+            current_rule.undo_move( move, node_data->player );
+        }
+    }
 };
 
 template< typename MoveT >
@@ -82,15 +140,19 @@ class Human : public AlgoGenerics< MoveT >
 public:
     Human( ::Player player ) : AlgoGenerics< MoveT >( player ) {}
 protected:
-    void start_game( GenericRule< MoveT >& rule )
+    void start_game( GenericRule< MoveT >& rule ) override
     {
         this->algorithm.reset( new interactive::Algorithm< MoveT >( rule, this->player ));
     }
-    void build_tree( GVC_t* ) {}
-    void show_side_panel(DropDownMenu& ) {}
-    bool show_tree_controls(DropDownMenu&) { return false; }
-    ChooseNodes* get_choose_best_count_nodes() { return nullptr; }
-    ChooseNodes* get_choose_best_percentage_nodes() { return nullptr; }
+    void build_tree( GVC_t* )  override {}
+    void show_side_panel(DropDownMenu& ) override {}
+    bool show_tree_controls(DropDownMenu&) override { return false; }
+    ChooseNodes* get_choose_best_count_nodes() override { return nullptr; }
+    ChooseNodes* get_choose_best_percentage_nodes() override { return nullptr; }
+    MoveT move;
+    MoveT const& get_move( Agnode_t* ) override { return move; }
+    void draw_board( GenericRule< MoveT >&, std::optional< MoveT > last_move, float board_width,
+        float pos_x, float pos_y ) override {}
 };
 
 template< typename MoveT >
@@ -130,23 +192,27 @@ class Negamax : public MMAlgo< MoveT >
 {
 public:
     Negamax( ::Player player ) : MMAlgo< MoveT >( player ) {}
-    void start_game( GenericRule< MoveT >& rule )
+    void start_game( GenericRule< MoveT >& rule ) override
     {
         negamax_algorithm = new NegamaxAlgorithm< MoveT >(
-            rule, this->player, this->depth.value, get_reorder_function(), get_eval_function());
+            rule, this->player, this->depth.value, get_reorder_function(), this->get_eval_function());
         this->algorithm.reset( negamax_algorithm ); 
     }
-    void show_side_panel(DropDownMenu& dropdown_menu)
+    void show_side_panel(DropDownMenu& dropdown_menu) override
     {
         show_spinner( this->depth );
         dropdown_menu.add( reorder_menu );
     }
-    void build_tree( GVC_t* gv_gvc ) {}
-    ChooseNodes* get_choose_best_count_nodes() { return nullptr; }
-    ChooseNodes* get_choose_best_percentage_nodes() { return nullptr; }
+    void build_tree( GVC_t* gv_gvc ) override {}
+    ChooseNodes* get_choose_best_count_nodes() override { return nullptr; }
+    ChooseNodes* get_choose_best_percentage_nodes() override { return nullptr; }
 protected:
     NegamaxAlgorithm< MoveT >* negamax_algorithm = nullptr;
     Menu reorder_menu { "reorder moves", {"shuffle", "reorder by score"}, 1 };
+    MoveT move;
+    MoveT const& get_move( Agnode_t* ) override { return move; }
+    void draw_board( GenericRule< MoveT >&, std::optional< MoveT > last_move, 
+        float board_width, float pos_x, float pos_y ) override {}
     ReOrder< MoveT > get_reorder_function()
     {
         if (reorder_menu.selected == 0)
@@ -160,8 +226,6 @@ protected:
         else    
             throw std::runtime_error( "invalid reorder menu selection");
     } 
-
-    virtual std::function< double (GenericRule< MoveT >&, ::Player) > get_eval_function() = 0;
 };
 
 class TicTacToeNegamax : public Negamax< tic_tac_toe::Move >, public TicTacToeEval
@@ -169,8 +233,9 @@ class TicTacToeNegamax : public Negamax< tic_tac_toe::Move >, public TicTacToeEv
 public:
     TicTacToeNegamax( ::Player );
 protected:
-    std::function< double (GenericRule< tic_tac_toe::Move >&, ::Player) > get_eval_function();
-    virtual void show_side_panel(DropDownMenu& dropdown_menu);
+    std::function< double (GenericRule< tic_tac_toe::Move >&, ::Player) > 
+        get_eval_function() override;
+    void show_side_panel(DropDownMenu& dropdown_menu) override;
 };
 
 class MetaTicTacToeNegamax : public Negamax< meta_tic_tac_toe::Move >, public MetaTicTacToeEval
@@ -178,8 +243,9 @@ class MetaTicTacToeNegamax : public Negamax< meta_tic_tac_toe::Move >, public Me
 public:
     MetaTicTacToeNegamax( ::Player player );
 protected:
-    virtual void show_side_panel(DropDownMenu& dropdown_menu);
-    std::function< double (GenericRule< meta_tic_tac_toe::Move >&, ::Player) > get_eval_function();
+    void show_side_panel(DropDownMenu& dropdown_menu) override;
+    std::function< double (GenericRule< meta_tic_tac_toe::Move >&, ::Player) > 
+        get_eval_function() override;
 };
 
 template< typename MoveT >
@@ -190,14 +256,15 @@ public:
     : MMAlgo< MoveT >( player ), 
       recursion_menu( Menu { "recursion", {"max depth", "max vertices"}} ), 
       choose_menu( Menu { "choose", {"best", "epsilon bucket"}} ) {}
-    void start_game( GenericRule< MoveT >& rule )
+    void start_game( GenericRule< MoveT >& rule ) override
     {
         minimax_algorithm = new MinimaxAlgorithm< MoveT >(
             rule, this->player, this->get_eval_function(), get_recursion_function(), get_choose_move_function());
         this->algorithm.reset( minimax_algorithm );
+        this->rule.reset( rule.clone());
     }
 
-    ChooseNodes* get_choose_best_count_nodes()
+    ChooseNodes* get_choose_best_count_nodes() override
     {
         auto tree = dynamic_cast< minimax::Tree* >( this->graphviz_tree.get());  
         if (!tree)
@@ -207,7 +274,7 @@ public:
             this->best_count.value );
     }
 
-    ChooseNodes* get_choose_best_percentage_nodes() 
+    ChooseNodes* get_choose_best_percentage_nodes() override
     { 
         auto tree = dynamic_cast< minimax::Tree* >( this->graphviz_tree.get());  
         if (!tree)
@@ -224,8 +291,16 @@ protected:
     Menu choose_menu;
     ValueBoxFloat bucket_width = ValueBoxFloat( "bucket width", "1.00" );
     MinimaxAlgorithm< MoveT >* minimax_algorithm = nullptr;
-    
-    virtual void show_side_panel(DropDownMenu& dropdown_menu)    
+
+    MoveT const& get_move( Agnode_t* gv_node ) override 
+    {
+        Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
+        Vertex< MoveT > const& node = *(Vertex< MoveT >*) node_data->node;
+ 
+        return node.move; 
+    }
+   
+    void show_side_panel(DropDownMenu& dropdown_menu) override    
     {    
         dropdown_menu.add( recursion_menu );
         dropdown_menu.add( choose_menu );
@@ -245,13 +320,16 @@ class TicTacToeMinimax : public Minimax< tic_tac_toe::Move >, public TicTacToeEv
 public:
     TicTacToeMinimax( ::Player player );
 protected:
-    std::function< double (GenericRule< tic_tac_toe::Move >&, ::Player) > get_eval_function();
-    void build_tree( GVC_t* gv_gvc );
-    void show_side_panel(DropDownMenu& dropdown_menu);
+    std::function< double (GenericRule< tic_tac_toe::Move >&, ::Player) > 
+        get_eval_function() override;
+    void build_tree( GVC_t* gv_gvc ) override;
+    void show_side_panel(DropDownMenu& dropdown_menu) override;
 
-    Recursion< tic_tac_toe::Move >* get_recursion_function();
+    Recursion< tic_tac_toe::Move >* get_recursion_function() override;
     std::function< tic_tac_toe::Move const& (VertexList< tic_tac_toe::Move > const&) > 
-        get_choose_move_function();
+        get_choose_move_function() override;
+    void draw_board( GenericRule< tic_tac_toe::Move >&, std::optional< tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y ) override;
 };
 
 class MetaTicTacToeMinimax : public Minimax< meta_tic_tac_toe::Move >, public MetaTicTacToeEval
@@ -259,14 +337,17 @@ class MetaTicTacToeMinimax : public Minimax< meta_tic_tac_toe::Move >, public Me
 public:
     MetaTicTacToeMinimax( ::Player );
 protected:
-    std::function< double (GenericRule< meta_tic_tac_toe::Move >&, ::Player) > get_eval_function();
-    void build_tree( GVC_t* gv_gvc );
-    void show_side_panel(DropDownMenu& dropdown_menu);
+    std::function< double (GenericRule< meta_tic_tac_toe::Move >&, ::Player) > 
+       get_eval_function() override;
+    void build_tree( GVC_t* gv_gvc ) override;
+    void show_side_panel(DropDownMenu& dropdown_menu) override;
 
-    Recursion< meta_tic_tac_toe::Move >* get_recursion_function();
+    Recursion< meta_tic_tac_toe::Move >* get_recursion_function() override;
 
     std::function< meta_tic_tac_toe::Move const& (VertexList< meta_tic_tac_toe::Move > const&) > 
-        get_choose_move_function();
+        get_choose_move_function() override;
+    void draw_board( GenericRule< meta_tic_tac_toe::Move >&, std::optional< meta_tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y ) override;
 };
 
 template< typename MoveT >
@@ -275,16 +356,25 @@ class Montecarlo : public AlgoGenerics< MoveT >
 public:
     Montecarlo( ::Player player, Menu const& choose_menu ) 
     : AlgoGenerics< MoveT >( player ), choose_menu( choose_menu ) {}
-    void start_game( GenericRule< MoveT >& rule )
+    void start_game( GenericRule< MoveT >& rule ) override
     {
         this->algorithm.reset( new montecarlo::Algorithm< MoveT >(
             rule, this->player, this->get_choose_move_function(), simulations.value, 
             exploration_factor.value ));
+        this->rule.reset( rule.clone());
     }
 protected:
+    MoveT const& get_move( Agnode_t* gv_node ) override 
+    {
+        Data* node_data = (Data*)aggetrec(gv_node, "data", 0);
+        montecarlo::Node< MoveT > const& node = *(montecarlo::Node< MoveT >*) node_data->node;
+ 
+        return node.move; 
+    }
+
     virtual montecarlo::ChooseMove< MoveT >* get_choose_move_function() = 0;
 
-    ChooseNodes* get_choose_best_count_nodes()
+    ChooseNodes* get_choose_best_count_nodes() override
     {
         auto tree = dynamic_cast< montecarlo::Tree* >( this->graphviz_tree.get());  
         if (!tree)
@@ -293,7 +383,7 @@ protected:
             [tree](Agnode_t* node) {return montecarlo::get_weight( *tree, node );}, 
             this->best_count.value );
     }
-    ChooseNodes* get_choose_best_percentage_nodes()
+    ChooseNodes* get_choose_best_percentage_nodes() override
     {
         auto tree = dynamic_cast< montecarlo::Tree* >( this->graphviz_tree.get());  
         if (!tree)
@@ -303,7 +393,7 @@ protected:
             this->best_percentage.value );
     }
 
-    void show_side_panel(DropDownMenu& dropdown_menu)
+    void show_side_panel(DropDownMenu& dropdown_menu)  override
     {
         dropdown_menu.add( choose_menu );
         show_spinner( simulations );
@@ -320,17 +410,21 @@ class TicTacToeMontecarlo : public Montecarlo< tic_tac_toe::Move >
 public: 
     TicTacToeMontecarlo( ::Player );
 protected:
-    void build_tree( GVC_t* gv_gvc );
-    montecarlo::ChooseMove< tic_tac_toe::Move >* get_choose_move_function();
+    void build_tree( GVC_t* gv_gvc ) override;
+    montecarlo::ChooseMove< tic_tac_toe::Move >* get_choose_move_function() override;
+    void draw_board( GenericRule< tic_tac_toe::Move >&, std::optional< tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y ) override;
 };
 
 class MetaTicTacToeMontecarlo : public Montecarlo< meta_tic_tac_toe::Move >
 {
 public: 
     MetaTicTacToeMontecarlo( ::Player );
-    void build_tree( GVC_t* gv_gvc );
+    void build_tree( GVC_t* gv_gvc ) override;
 protected:
-    montecarlo::ChooseMove< meta_tic_tac_toe::Move >* get_choose_move_function();
+    montecarlo::ChooseMove< meta_tic_tac_toe::Move >* get_choose_move_function() override;
+    void draw_board( GenericRule< meta_tic_tac_toe::Move >&, std::optional< meta_tic_tac_toe::Move > last_move, 
+        float board_width, float pos_x, float pos_y ) override;
 };
 
 } // namespace gui {

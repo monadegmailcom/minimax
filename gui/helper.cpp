@@ -9,7 +9,7 @@ namespace gui {
 
 float panel_y = 0;
 const float text_box_height = 30;
-float board_width = 600;
+float board_width = 800;
 const float panel_spacer = 10;
 float panel_width = 200;
 float panel_x = board_width + panel_spacer;
@@ -198,6 +198,90 @@ DisableGui::~DisableGui()
 void DisableGui::operator()()
 {
     GuiSetState(STATE_DISABLED);
+}
+
+void draw_box( 
+    int i, int j, Color color, float cell_size, float pos_x, float pos_y, float line_width )
+{
+    pos_x += j * cell_size;
+    pos_y += i * cell_size;
+
+    DrawRectangleLinesEx({ pos_x, pos_y, cell_size, cell_size}, line_width, color);
+}
+
+void draw_player(
+    ::Player player, int i, int j, Color color, float cell_size, float pos_x, float pos_y )
+{
+    const float spacer = cell_size / 4;
+    const float line_width = cell_size / 20;
+
+    pos_x += j * cell_size;
+    pos_y += i * cell_size;
+
+    if (player == player1)
+    {    
+        DrawLineEx(
+            {pos_x + spacer, pos_y + spacer}, 
+            {pos_x + cell_size - spacer, pos_y + cell_size - spacer}, 
+            line_width, color);
+        DrawLineEx(
+            {pos_x + cell_size - spacer, pos_y + spacer}, 
+            {pos_x + spacer, pos_y + cell_size - spacer}, 
+            line_width, color);
+    }
+    else if (player == player2)
+    {
+        DrawRing( 
+            {pos_x + cell_size / 2, pos_y + cell_size / 2}, 
+            cell_size / 2 - spacer - line_width, cell_size / 2 - spacer, 0, 360, 36, color);
+    }
+}
+
+void draw_tic_tac_toe_board( 
+    ::Player const* board, optional< tic_tac_toe::Move > const& last_move, float board_width, float pos_x, float pos_y )
+{
+    const float cell_size = board_width / 3;
+    for (int i = 0; i < tic_tac_toe::n; i++)
+        for (int j = 0; j < tic_tac_toe::n; j++)
+        {
+            const int idx = i * tic_tac_toe::n + j;
+            const ::Player player = board[idx];
+            const Color player_color = last_move == idx ? RED : BLACK;
+            draw_box( i, j, BLACK, cell_size, pos_x, pos_y );
+            draw_player(player, i, j, player_color, cell_size, pos_x, pos_y);
+        }
+}
+
+void draw_meta_tic_tac_toe_board( 
+    ::Player const* board, ::Player* meta_board, array< bool, meta_tic_tac_toe::item_size >& terminals,
+    optional< tic_tac_toe::Move > const& last_move, float board_width, float pos_x, float pos_y )
+{
+    const float outer_cell_size = board_width / 3;
+    const float inner_cell_size = outer_cell_size / 3;
+    int idx = 0;
+    for (int i = 0; i < meta_tic_tac_toe::n; i++)
+        for (int j = 0; j < meta_tic_tac_toe::n; j++)
+        {
+            const bool terminal = terminals[i * meta_tic_tac_toe::n + j];
+
+            draw_box( i, j, BLACK, outer_cell_size, pos_x, pos_y, 2 );
+            const int pos_x2 = pos_x + j * outer_cell_size;
+            const int pos_y2 = pos_y + i * outer_cell_size;
+            for (int i2 = 0; i2 < meta_tic_tac_toe::n; i2++)
+                for (int j2 = 0; j2 < meta_tic_tac_toe::n; j2++)
+                {
+                    draw_box( i2, j2, BLACK, inner_cell_size, pos_x2, pos_y2, 1.0);
+                    const ::Player player = board[idx];
+                    const Color LIGHTRED { 255, 127, 127, 255 };
+                    const Color player_color = 
+                        last_move == idx ? (terminal ? LIGHTRED : RED) : (terminal ? LIGHTGRAY : BLACK);
+                    ++idx;
+                    draw_player(player, i2, j2, player_color, inner_cell_size, pos_x2, pos_y2);
+                }
+            
+            if (terminal)
+                draw_player( meta_board[i * meta_tic_tac_toe::n + j], i, j, BLACK, outer_cell_size, pos_x, pos_y);
+        }
 }
 
 } // namespace gui {
